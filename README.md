@@ -1,6 +1,6 @@
 # Regal
 
-Regal is a `no_std`, allocation-free lexer engine that compiles regular-expression patterns into a minimal DFA at build time. It supports incremental lexing, cursor-aware queries, and deterministic token streams suitable for editors or embedded parsers.
+Regal is a `no_std`, allocation-free lexer engine that compiles regular-expression patterns into a minimal DFA at build time. It supports incremental lexing, cursor-aware queries, hybrid DFA lookup tables (dense O(1) transitions when alphabets are compact), and deterministic token streams suitable for editors or embedded parsers.
 
 ## Getting Started
 
@@ -100,8 +100,9 @@ Patterns are compiled into const-generic tables. When using the runtime `compile
 - `NFA_STATES`, `NFA_TRANSITIONS`, `NFA_EPSILONS`: Thompson NFA limits.
 - `DFA_STATES`, `DFA_TRANSITIONS`: minimized DFA capacities.
 - `MAX_BOUNDARIES`: workspace for character partitioning (roughly twice the transition count).
+- `MAX_DENSE`: total slots available for per-state dense transition rows (only consumed by states whose alphabets are small and mostly populated; others continue to use range scans).
 
-The derive macro infers the necessary sizes automatically and emits packed arrays that can be embedded in ROM.
+The derive macro infers the necessary sizes automatically (including dense workspace) and emits packed arrays that can be embedded in ROM.
 
 ## Testing
 
