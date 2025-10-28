@@ -8,8 +8,8 @@ Add both crates to your `Cargo.toml`. The core library holds the runtime DFA int
 
 ```toml
 [dependencies]
-regal = { path = "path/to/regal" }
-regal-macros = { path = "path/to/regal/regal-macros" }
+regal = { git = "https://github.com/NathanHowell/regal", tag = "v0.1.0", package = "regal" }
+regal-macros = { git = "https://github.com/NathanHowell/regal", tag = "v0.1.0", package = "regal-macros" }
 ```
 
 The library is `#![no_std]` by default and requires no allocator. Patterns are compiled on the host via the proc macro, and the generated tables can be embedded in firmware or other constrained environments.
