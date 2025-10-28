@@ -1,0 +1,5 @@
+error: priority attribute expects #[priority = <int>]
+ --> tests/ui/invalid_priority.rs:8:5
+  |
+8 |     #[priority("high")]
+  |     ^

@@ -1,0 +1,5 @@
+error: Each variant must have a #[token(..)] or #[regex(..)] attribute
+ --> tests/ui/missing_pattern.rs:5:5
+  |
+5 |     A,
+  |     ^

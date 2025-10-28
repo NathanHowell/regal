@@ -1,6 +1,6 @@
 use regal::{
-    CharCategory, ClassAtom, CompiledLexer, CursorView, Pattern, PatternNode, TextEdit, TokenCache,
-    TokenRecord, TokenSpec, compile,
+    CharCategory, ClassAtom, CompiledLexer, CursorView, IncrementalError, Pattern, PatternNode,
+    TextEdit, TokenCache, TokenRecord, TokenSpec, compile,
 };
 use std::vec::Vec;
 
@@ -11,6 +11,7 @@ enum Tok {
     Ident,
     Number,
     Reboot,
+    Reset,
     Whitespace,
 }
 
@@ -101,6 +102,27 @@ const KEYWORD_SPECS: [TokenSpec<'static, Tok>; 2] = [
     },
 ];
 
+const KEYWORD_MULTI_SPECS: [TokenSpec<'static, Tok>; 3] = [
+    TokenSpec {
+        pattern: WS_PATTERN,
+        token: Tok::Whitespace,
+        priority: 10,
+        skip: true,
+    },
+    TokenSpec {
+        pattern: REBOOT_PATTERN,
+        token: Tok::Reboot,
+        priority: 0,
+        skip: false,
+    },
+    TokenSpec {
+        pattern: Pattern::new(&PatternNode::Literal(b"reset")),
+        token: Tok::Reset,
+        priority: 0,
+        skip: false,
+    },
+];
+
 fn compile_full() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
     compile::<
         Tok,
@@ -127,6 +149,20 @@ fn compile_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> 
         MAX_BOUNDARIES,
     >(&KEYWORD_SPECS)
     .expect("compile keyword lexer")
+}
+
+fn compile_multi_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
+    compile::<
+        Tok,
+        TOKENS,
+        NFA_STATES,
+        NFA_TRANSITIONS,
+        NFA_EPSILONS,
+        DFA_STATES,
+        DFA_TRANSITIONS,
+        MAX_BOUNDARIES,
+    >(&KEYWORD_MULTI_SPECS)
+    .expect("compile keyword variants")
 }
 
 #[test]
@@ -222,6 +258,94 @@ fn rebuild_is_deterministic() {
     let second = cache.tokens();
 
     assert_eq!(first, second);
+}
+
+#[test]
+fn rebuild_errors_on_token_overflow() {
+    let compiled = compile_full();
+    // Capacity of 2 is not enough for the five tokens produced by the input.
+    let mut small_cache: TokenCache<Tok, 2> = TokenCache::new();
+    let err = small_cache
+        .rebuild(&compiled, "reboot foo 42")
+        .expect_err("overflow should surface as error");
+
+    assert!(matches!(err, IncrementalError::TokenOverflow));
+}
+
+#[test]
+fn apply_edit_errors_on_invalid_range() {
+    let compiled = compile_full();
+    let mut cache: TokenCache<Tok, CACHE> = TokenCache::new();
+    cache
+        .rebuild(&compiled, "foo")
+        .expect("initial build succeeds");
+
+    let err = cache
+        .apply_edit(
+            &compiled,
+            "foo",
+            TextEdit {
+                range: 10..12,
+                replacement_len: 0,
+            },
+        )
+        .expect_err("invalid edit range should fail");
+
+    assert!(matches!(err, IncrementalError::InvalidEdit));
+}
+
+#[test]
+fn apply_edit_errors_on_length_mismatch() {
+    let compiled = compile_full();
+    let mut cache: TokenCache<Tok, CACHE> = TokenCache::new();
+    cache
+        .rebuild(&compiled, "foo")
+        .expect("initial build succeeds");
+
+    let err = cache
+        .apply_edit(
+            &compiled,
+            "foobar",
+            TextEdit {
+                range: 0..1,
+                replacement_len: 3,
+            },
+        )
+        .expect_err("length mismatch should be detected");
+
+    assert!(matches!(
+        err,
+        IncrementalError::LengthMismatch {
+            expected: 5,
+            actual: 6
+        }
+    ));
+}
+
+#[test]
+fn partial_token_lists_multiple_candidates() {
+    let compiled = compile_multi_keyword();
+    let mut cache: TokenCache<Tok, CACHE> = TokenCache::new();
+    let partial = cache
+        .rebuild(&compiled, "re")
+        .expect("rebuild ok")
+        .expect("partial token expected");
+
+    assert_eq!(partial.start, 0);
+    assert_eq!(partial.fragment, "re");
+    assert!(partial.candidates.len() >= 2);
+    let mut saw_reboot = false;
+    let mut saw_reset = false;
+    for candidate in partial.candidates.iter() {
+        if candidate.token == Tok::Reboot {
+            saw_reboot = true;
+        }
+        if candidate.token == Tok::Reset {
+            saw_reset = true;
+        }
+    }
+    assert!(saw_reboot, "expected literal candidate");
+    assert!(saw_reset, "expected second keyword candidate");
 }
 
 fn assert_token(token: TokenRecord<Tok>, kind: Tok, start: usize, end: usize, skipped: bool) {

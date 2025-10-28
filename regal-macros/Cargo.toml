@@ -12,3 +12,6 @@ quote.workspace = true
 regex-syntax.workspace = true
 syn = { workspace = true, features = ["full"] }
 regal = { path = "../regal" }
+
+[dev-dependencies]
+trybuild.workspace = true
