@@ -79,9 +79,15 @@ where
         self.tail
     }
 
-    pub fn rebuild<'a, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize>(
+    pub fn rebuild<
+        'a,
+        const TOKENS: usize,
+        const STATES: usize,
+        const TRANSITIONS: usize,
+        const DENSE: usize,
+    >(
         &mut self,
-        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS>,
+        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
         input: &'a str,
     ) -> Result<Option<PartialToken<'a, T, TOKENS>>, IncrementalError> {
         self.tokens.clear();
@@ -92,9 +98,15 @@ where
         Ok(partial)
     }
 
-    pub fn apply_edit<'a, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize>(
+    pub fn apply_edit<
+        'a,
+        const TOKENS: usize,
+        const STATES: usize,
+        const TRANSITIONS: usize,
+        const DENSE: usize,
+    >(
         &mut self,
-        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS>,
+        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
         input: &'a str,
         edit: TextEdit,
     ) -> Result<Option<PartialToken<'a, T, TOKENS>>, IncrementalError> {
@@ -191,9 +203,10 @@ fn run_lexer<
     const STATES: usize,
     const TRANSITIONS: usize,
     const MAX_TOKENS: usize,
+    const DENSE: usize,
 >(
-    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS>,
-    lexer: &mut Lexer<'a, T, TOKENS, STATES, TRANSITIONS>,
+    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
+    lexer: &mut Lexer<'a, T, TOKENS, STATES, TRANSITIONS, DENSE>,
     input: &'a str,
     mut offset: usize,
     records: &mut Vec<TokenRecord<T>, MAX_TOKENS>,
@@ -304,8 +317,15 @@ where
     }
 }
 
-fn build_partial<'a, T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize>(
-    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS>,
+fn build_partial<
+    'a,
+    T,
+    const TOKENS: usize,
+    const STATES: usize,
+    const TRANSITIONS: usize,
+    const DENSE: usize,
+>(
+    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
     fragment: &'a str,
     start: usize,
     entry: Checkpoint,

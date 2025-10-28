@@ -16,6 +16,7 @@ const NFA_EPSILONS: usize = 64;
 const DFA_STATES: usize = 32;
 const DFA_TRANSITIONS: usize = 64;
 const MAX_BOUNDARIES: usize = 128;
+const MAX_DENSE: usize = 128;
 
 const WS_CLASS: [ClassAtom; 1] = [ClassAtom::Category(CharCategory::Whitespace)];
 const WS_NODE: PatternNode<'static> = PatternNode::Class(&WS_CLASS);
@@ -46,7 +47,7 @@ const IDENT_PATTERN: Pattern<'static> = Pattern::new(&IDENT_REPEAT_NODE);
 
 const EQ_PATTERN: Pattern<'static> = Pattern::new(&PatternNode::Literal(b"="));
 
-fn compiled() -> regal::CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
+fn compiled() -> regal::CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE> {
     static SPECS: [TokenSpec<'static, Tok>; 3] = [
         TokenSpec {
             pattern: WS_PATTERN,
@@ -77,6 +78,7 @@ fn compiled() -> regal::CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> 
         DFA_STATES,
         DFA_TRANSITIONS,
         MAX_BOUNDARIES,
+        MAX_DENSE,
     >(&SPECS)
     .expect("lexer compilation")
 }
@@ -112,7 +114,10 @@ fn advance_emits_after_progress_and_reprocesses() {
     // lexer ready for the next token.
     match lexer.advance(' ') {
         regal::Advance::Progress => {}
-        other => panic!("expected progress while consuming whitespace, got {:?}", other),
+        other => panic!(
+            "expected progress while consuming whitespace, got {:?}",
+            other
+        ),
     }
 
     match lexer.advance('=') {

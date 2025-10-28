@@ -3,10 +3,19 @@ use crate::nfa::{Nfa, NfaState};
 use core::cmp;
 use heapless::Vec;
 
+pub(crate) const INVALID_TARGET: u16 = u16::MAX;
+const DENSE_SPAN_LIMIT: u32 = 128;
+
 #[derive(Clone)]
-pub struct Dfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize> {
+pub struct Dfa<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+> {
     pub states: Vec<DfaState<MAX_TOKENS>, MAX_STATES>,
     pub transitions: Vec<DfaTransition, MAX_TRANSITIONS>,
+    pub dense: Vec<u16, MAX_DENSE>,
     pub start: u16,
 }
 
@@ -17,6 +26,9 @@ pub struct DfaState<const MAX_TOKENS: usize> {
     pub accept_token: Option<u16>,
     pub priority: u16,
     pub possible: Bitset<MAX_TOKENS>,
+    pub dense_offset: u32,
+    pub dense_len: u32,
+    pub dense_start: u32,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -31,6 +43,7 @@ pub enum DfaError {
     StateOverflow,
     TransitionOverflow,
     WorkspaceOverflow,
+    DenseOverflow,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -41,13 +54,18 @@ struct RangeCandidate<const N: usize> {
 }
 
 #[allow(dead_code)]
-impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>
-    Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>
+impl<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+> Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>
 {
     pub const fn new() -> Self {
         Self {
             states: Vec::new(),
             transitions: Vec::new(),
+            dense: Vec::new(),
             start: 0,
         }
     }
@@ -83,20 +101,39 @@ impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: us
     pub fn possible_tokens(&self, state: u16) -> Bitset<MAX_TOKENS> {
         self.states[state as usize].possible
     }
+
+    fn clear_dense_metadata(&mut self) {
+        for state in self.states.iter_mut() {
+            state.dense_offset = 0;
+            state.dense_len = 0;
+            state.dense_start = 0;
+        }
+        self.dense.clear();
+    }
 }
 
 #[derive(Clone)]
-pub struct PackedDfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>
-{
+pub struct PackedDfa<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+> {
     states_len: usize,
     transitions_len: usize,
     states: [DfaState<MAX_TOKENS>; MAX_STATES],
     transitions: [DfaTransition; MAX_TRANSITIONS],
+    dense_len: usize,
+    dense: [u16; MAX_DENSE],
     start: u16,
 }
 
-impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>
-    PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>
+impl<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+> PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>
 {
     pub const fn start_state(&self) -> u16 {
         self.start
@@ -146,26 +183,69 @@ impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: us
         &self.states[..self.states_len]
     }
 
+    pub fn state(&self, state: u16) -> Option<&DfaState<MAX_TOKENS>> {
+        self.states.get(state as usize)
+    }
+
+    pub fn dense_slice(&self, offset: u32, len: u32) -> &[u16] {
+        let start = cmp::min(offset as usize, self.dense_len);
+        let end = cmp::min(start + len as usize, self.dense_len);
+        &self.dense[start..end]
+    }
+
+    pub fn dense_target(&self, state: u16, ch: u32) -> Option<u16> {
+        let meta = self.state(state)?;
+        if meta.dense_len == 0 {
+            return None;
+        }
+        let start = meta.dense_start;
+        let len = meta.dense_len;
+        if ch < start {
+            return None;
+        }
+        let rel = ch - start;
+        if rel >= len {
+            return None;
+        }
+        let row = self.dense_slice(meta.dense_offset, len);
+        row.get(rel as usize).copied().and_then(|target| {
+            if target == INVALID_TARGET {
+                None
+            } else {
+                Some(target)
+            }
+        })
+    }
+
     pub const fn from_parts(
         start: u16,
         states: [DfaState<MAX_TOKENS>; MAX_STATES],
         states_len: usize,
         transitions: [DfaTransition; MAX_TRANSITIONS],
         transitions_len: usize,
+        dense: [u16; MAX_DENSE],
+        dense_len: usize,
     ) -> Self {
         Self {
             states_len,
             transitions_len,
             states,
             transitions,
+            dense_len,
+            dense,
             start,
         }
     }
 }
 
-pub fn pack_dfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>(
-    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>,
-) -> PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS> {
+pub fn pack_dfa<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+>(
+    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>,
+) -> PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE> {
     let mut states = [DfaState::default(); MAX_STATES];
     for (index, state) in dfa.states.iter().enumerate() {
         states[index] = *state;
@@ -174,11 +254,17 @@ pub fn pack_dfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX
     for (index, trans) in dfa.transitions.iter().enumerate() {
         transitions[index] = *trans;
     }
+    let mut dense = [INVALID_TARGET; MAX_DENSE];
+    for (index, value) in dfa.dense.iter().copied().enumerate() {
+        dense[index] = value;
+    }
     PackedDfa {
         states_len: dfa.states.len(),
         transitions_len: dfa.transitions.len(),
         states,
         transitions,
+        dense_len: dfa.dense.len(),
+        dense,
         start: dfa.start,
     }
 }
@@ -191,10 +277,11 @@ pub fn determinize<
     const DFA_TRANSITIONS: usize,
     const MAX_TOKENS: usize,
     const MAX_BOUNDARIES: usize,
+    const MAX_DENSE: usize,
 >(
     nfa: &Nfa<NFA_STATES, NFA_TRANSITIONS, NFA_EPSILONS>,
     start_state: u16,
-) -> Result<Dfa<DFA_STATES, DFA_TRANSITIONS, MAX_TOKENS>, DfaError> {
+) -> Result<Dfa<DFA_STATES, DFA_TRANSITIONS, MAX_TOKENS, MAX_DENSE>, DfaError> {
     let reachability =
         compute_reachable_tokens::<NFA_STATES, NFA_TRANSITIONS, NFA_EPSILONS, MAX_TOKENS>(nfa);
 
@@ -264,12 +351,19 @@ pub fn determinize<
         index += 1;
     }
 
+    populate_dense_tables::<DFA_STATES, DFA_TRANSITIONS, MAX_TOKENS, MAX_DENSE>(&mut dfa)?;
+
     Ok(dfa)
 }
 
-pub fn minimize<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>(
-    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>,
-) -> Result<Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>, DfaError> {
+pub fn minimize<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+>(
+    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>,
+) -> Result<Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>, DfaError> {
     let state_count = dfa.states.len();
     if state_count == 0 {
         return Ok(dfa.clone());
@@ -450,9 +544,10 @@ fn find_or_insert_state<
     const DFA_STATES: usize,
     const DFA_TRANSITIONS: usize,
     const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
 >(
     state_sets: &mut Vec<Bitset<NFA_STATES>, DFA_STATES>,
-    dfa: &mut Dfa<DFA_STATES, DFA_TRANSITIONS, MAX_TOKENS>,
+    dfa: &mut Dfa<DFA_STATES, DFA_TRANSITIONS, MAX_TOKENS, MAX_DENSE>,
     set: Bitset<NFA_STATES>,
 ) -> Result<u16, DfaError> {
     for (idx, existing) in state_sets.iter().enumerate() {
@@ -480,8 +575,9 @@ fn states_equivalent<
     const MAX_STATES: usize,
     const MAX_TRANSITIONS: usize,
     const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
 >(
-    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>,
+    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>,
     a: usize,
     b: usize,
     blocks: &[usize],
@@ -517,11 +613,16 @@ fn states_equivalent<
     true
 }
 
-fn rebuild_dfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>(
-    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>,
+fn rebuild_dfa<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+>(
+    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>,
     blocks: &[usize],
     block_count: usize,
-) -> Result<Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>, DfaError> {
+) -> Result<Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>, DfaError> {
     let mut result = Dfa::new();
     let mut reps = [usize::MAX; MAX_STATES];
 
@@ -551,11 +652,91 @@ fn rebuild_dfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_
         let mut new_state = rep_state;
         new_state.first_transition = offset;
         new_state.transition_len = count;
+        new_state.dense_offset = 0;
+        new_state.dense_len = 0;
+        new_state.dense_start = 0;
         result.push_state(new_state)?;
     }
 
     result.start = blocks[dfa.start as usize] as u16;
+    populate_dense_tables::<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>(&mut result)?;
     Ok(result)
+}
+
+fn populate_dense_tables<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+>(
+    dfa: &mut Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>,
+) -> Result<(), DfaError> {
+    dfa.clear_dense_metadata();
+
+    for state_index in 0..dfa.states.len() {
+        let state = &dfa.states[state_index];
+        let start = state.first_transition as usize;
+        let len = state.transition_len as usize;
+        if len == 0 {
+            continue;
+        }
+
+        let transitions = &dfa.transitions[start..start + len];
+        let mut min = u32::MAX;
+        let mut max = 0u32;
+        let mut coverage: u64 = 0;
+        let mut valid = true;
+
+        for tr in transitions {
+            min = cmp::min(min, tr.start);
+            max = cmp::max(max, tr.end);
+            if tr.end == u32::MAX {
+                valid = false;
+                break;
+            }
+            let span = tr.end.saturating_sub(tr.start).saturating_add(1);
+            coverage = coverage.saturating_add(span as u64);
+        }
+
+        if !valid || min == u32::MAX || max < min {
+            continue;
+        }
+
+        let span = max - min + 1;
+        if span > DENSE_SPAN_LIMIT {
+            continue;
+        }
+
+        if coverage * 2 < span as u64 {
+            continue;
+        }
+
+        if dfa.dense.len() + span as usize > MAX_DENSE {
+            continue;
+        }
+
+        let offset = dfa.dense.len();
+        for _ in 0..span {
+            dfa.dense
+                .push(INVALID_TARGET)
+                .map_err(|_| DfaError::DenseOverflow)?;
+        }
+
+        for tr in transitions {
+            for value in tr.start..=tr.end {
+                let index = offset + (value - min) as usize;
+                dfa.dense[index] = tr.target;
+            }
+        }
+
+        if let Some(state_meta) = dfa.states.get_mut(state_index) {
+            state_meta.dense_offset = offset as u32;
+            state_meta.dense_len = span;
+            state_meta.dense_start = min;
+        }
+    }
+
+    Ok(())
 }
 
 fn compute_reachable_tokens<

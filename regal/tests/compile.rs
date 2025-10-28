@@ -1,6 +1,4 @@
-use regal::{
-    CharCategory, ClassAtom, CompiledLexer, Pattern, PatternNode, TokenSpec, compile,
-};
+use regal::{CharCategory, ClassAtom, CompiledLexer, Pattern, PatternNode, TokenSpec, compile};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 enum Tok {
@@ -17,6 +15,7 @@ const NFA_EPSILONS: usize = 128;
 const DFA_STATES: usize = 64;
 const DFA_TRANSITIONS: usize = 128;
 const MAX_BOUNDARIES: usize = 256;
+const MAX_DENSE: usize = 256;
 
 const ALPHA_CLASS: [ClassAtom; 1] = [ClassAtom::Category(CharCategory::Alphabetic)];
 const ALPHA_NODE: PatternNode<'static> = PatternNode::Class(&ALPHA_CLASS);
@@ -40,7 +39,7 @@ const MIX_SEQ: [Pattern<'static>; 2] = [ALPHA_PATTERN, DIGIT_PATTERN];
 const MIX_NODE: PatternNode<'static> = PatternNode::Sequence(&MIX_SEQ);
 const MIX_PATTERN: Pattern<'static> = Pattern::new(&MIX_NODE);
 
-fn compile_test_lexer() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
+fn compile_test_lexer() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE> {
     let specs = [
         TokenSpec {
             pattern: ALPHA_PATTERN,
@@ -71,6 +70,7 @@ fn compile_test_lexer() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITION
         DFA_STATES,
         DFA_TRANSITIONS,
         MAX_BOUNDARIES,
+        MAX_DENSE,
     >(&specs)
     .expect("test lexer should compile")
 }
@@ -86,7 +86,7 @@ fn compile_builds_expected_tokens() {
 }
 
 fn assert_match(
-    lexer: &mut regal::Lexer<'_, Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS>,
+    lexer: &mut regal::Lexer<'_, Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE>,
     input: &str,
     expected_token: Tok,
     expected_len: usize,
@@ -123,16 +123,7 @@ fn compile_errors_on_too_many_tokens() {
         },
     ];
 
-    match compile::<
-        Tok,
-        1,
-        8,
-        8,
-        8,
-        8,
-        8,
-        16,
-    >(&specs) {
+    match compile::<Tok, 1, 8, 8, 8, 8, 8, 16, 16>(&specs) {
         Err(regal::CompileError::TooManyTokens) => {}
         Err(other) => panic!("unexpected error: {:?}", other),
         Ok(_) => panic!("expected too many tokens error"),
@@ -149,16 +140,7 @@ fn compile_propagates_nfa_overflow() {
         skip: false,
     };
 
-    match compile::<
-        Tok,
-        1,
-        4,
-        4,
-        4,
-        8,
-        8,
-        16,
-    >(&[spec]) {
+    match compile::<Tok, 1, 4, 4, 4, 8, 8, 16, 16>(&[spec]) {
         Err(regal::CompileError::Nfa(regal::NfaError::StateOverflow)) => {}
         Err(other) => panic!("unexpected error: {:?}", other),
         Ok(_) => panic!("expected NFA overflow"),
@@ -180,16 +162,7 @@ fn compile_propagates_dfa_overflow() {
         skip: false,
     };
 
-    match compile::<
-        Tok,
-        1,
-        16,
-        16,
-        16,
-        1,
-        2,
-        8,
-    >(&[spec]) {
+    match compile::<Tok, 1, 16, 16, 16, 1, 2, 8, 8>(&[spec]) {
         Err(regal::CompileError::Dfa(regal::DfaError::StateOverflow)) => {}
         Err(other) => panic!("unexpected error: {:?}", other),
         Ok(_) => panic!("expected DFA overflow"),

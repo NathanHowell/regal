@@ -23,6 +23,7 @@ const DFA_STATES: usize = 64;
 const DFA_TRANSITIONS: usize = 128;
 const MAX_BOUNDARIES: usize = 256;
 const CACHE: usize = 32;
+const MAX_DENSE: usize = 256;
 
 const REBOOT_NODE: PatternNode<'static> = PatternNode::Literal(b"reboot");
 const REBOOT_PATTERN: Pattern<'static> = Pattern::new(&REBOOT_NODE);
@@ -123,7 +124,7 @@ const KEYWORD_MULTI_SPECS: [TokenSpec<'static, Tok>; 3] = [
     },
 ];
 
-fn compile_full() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
+fn compile_full() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE> {
     compile::<
         Tok,
         TOKENS,
@@ -133,11 +134,12 @@ fn compile_full() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
         DFA_STATES,
         DFA_TRANSITIONS,
         MAX_BOUNDARIES,
+        MAX_DENSE,
     >(&FULL_SPECS)
     .expect("compile full lexer")
 }
 
-fn compile_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
+fn compile_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE> {
     compile::<
         Tok,
         TOKENS,
@@ -147,11 +149,12 @@ fn compile_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> 
         DFA_STATES,
         DFA_TRANSITIONS,
         MAX_BOUNDARIES,
+        MAX_DENSE,
     >(&KEYWORD_SPECS)
     .expect("compile keyword lexer")
 }
 
-fn compile_multi_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS> {
+fn compile_multi_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE> {
     compile::<
         Tok,
         TOKENS,
@@ -161,6 +164,7 @@ fn compile_multi_keyword() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSIT
         DFA_STATES,
         DFA_TRANSITIONS,
         MAX_BOUNDARIES,
+        MAX_DENSE,
     >(&KEYWORD_MULTI_SPECS)
     .expect("compile keyword variants")
 }

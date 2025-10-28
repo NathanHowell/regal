@@ -1,7 +1,11 @@
 use crate::bitset::Bitset;
 use crate::nfa::{DynamicNfa, NfaState};
+use std::cmp;
 use std::collections::HashMap;
 use std::vec::Vec;
+
+const INVALID_TARGET: u16 = u16::MAX;
+const DENSE_SPAN_LIMIT: u32 = 128;
 
 #[derive(Clone)]
 pub struct DynamicDfaState {
@@ -10,6 +14,9 @@ pub struct DynamicDfaState {
     pub accept_token: Option<u16>,
     pub priority: u16,
     pub possible: Vec<bool>,
+    pub dense_offset: u32,
+    pub dense_len: u32,
+    pub dense_start: u32,
 }
 
 impl DynamicDfaState {
@@ -20,6 +27,9 @@ impl DynamicDfaState {
             accept_token: None,
             priority: u16::MAX,
             possible: vec![false; token_count],
+            dense_offset: 0,
+            dense_len: 0,
+            dense_start: 0,
         }
     }
 }
@@ -36,6 +46,7 @@ pub struct DynamicDfa {
     pub states: Vec<DynamicDfaState>,
     pub transitions: Vec<DynamicDfaTransition>,
     pub start: u16,
+    pub dense: Vec<u16>,
 }
 
 pub fn build_dfa(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, String> {
@@ -113,11 +124,14 @@ fn determinize(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, Strin
         index += 1;
     }
 
-    Ok(DynamicDfa {
+    let mut dfa = DynamicDfa {
         states: dfa_states,
         transitions: dfa_transitions,
         start: 0,
-    })
+        dense: Vec::new(),
+    };
+    populate_dense_tables(&mut dfa);
+    Ok(dfa)
 }
 
 fn minimize(dfa: DynamicDfa, token_count: usize) -> Result<DynamicDfa, String> {
@@ -200,11 +214,73 @@ fn minimize(dfa: DynamicDfa, token_count: usize) -> Result<DynamicDfa, String> {
 
     let start_block = block_ids[0];
 
-    Ok(DynamicDfa {
+    let mut result = DynamicDfa {
         start: start_block as u16,
         states: new_states,
         transitions: new_transitions,
-    })
+        dense: Vec::new(),
+    };
+    populate_dense_tables(&mut result);
+    Ok(result)
+}
+
+fn populate_dense_tables(dfa: &mut DynamicDfa) {
+    dfa.dense.clear();
+    for state in dfa.states.iter_mut() {
+        state.dense_offset = 0;
+        state.dense_len = 0;
+        state.dense_start = 0;
+
+        let start = state.first_transition as usize;
+        let len = state.transition_len as usize;
+        if len == 0 {
+            continue;
+        }
+
+        let transitions = &dfa.transitions[start..start + len];
+        let mut min = u32::MAX;
+        let mut max = 0u32;
+        let mut coverage: u64 = 0;
+        let mut valid = true;
+
+        for tr in transitions {
+            min = cmp::min(min, tr.start);
+            max = cmp::max(max, tr.end);
+            if tr.end == u32::MAX {
+                valid = false;
+                break;
+            }
+            let span = tr.end.saturating_sub(tr.start).saturating_add(1);
+            coverage = coverage.saturating_add(span as u64);
+        }
+
+        if !valid || min == u32::MAX || max < min {
+            continue;
+        }
+
+        let span = max - min + 1;
+        if span > DENSE_SPAN_LIMIT {
+            continue;
+        }
+
+        if coverage * 2 < span as u64 {
+            continue;
+        }
+
+        let offset = dfa.dense.len();
+        dfa.dense.resize(offset + span as usize, INVALID_TARGET);
+
+        for tr in transitions {
+            for value in tr.start..=tr.end {
+                let index = offset + (value - min) as usize;
+                dfa.dense[index] = tr.target;
+            }
+        }
+
+        state.dense_offset = offset as u32;
+        state.dense_len = span;
+        state.dense_start = min;
+    }
 }
 
 fn build_transition_signature(

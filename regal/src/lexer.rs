@@ -55,11 +55,17 @@ pub enum Advance<T> {
 }
 
 /// Incremental DFA interpreter.
-pub struct Lexer<'a, T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize>
-where
+pub struct Lexer<
+    'a,
+    T,
+    const TOKENS: usize,
+    const STATES: usize,
+    const TRANSITIONS: usize,
+    const DENSE: usize,
+> where
     T: Copy + Default,
 {
-    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS>,
+    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
     state: u16,
     progress_len: usize,
     last_accept: Option<Accept>,
@@ -105,12 +111,12 @@ impl Checkpoint {
     }
 }
 
-impl<'a, T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize>
-    Lexer<'a, T, TOKENS, STATES, TRANSITIONS>
+impl<'a, T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize, const DENSE: usize>
+    Lexer<'a, T, TOKENS, STATES, TRANSITIONS, DENSE>
 where
     T: Copy + Default,
 {
-    pub fn new(compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS>) -> Self {
+    pub fn new(compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>) -> Self {
         let start = Checkpoint::start(compiled.dfa.start_state());
         Self {
             compiled,
@@ -214,6 +220,10 @@ where
     }
 
     fn next_state(&self, state: u16, ch: u32) -> Option<u16> {
+        if let Some(target) = self.compiled.dfa.dense_target(state, ch) {
+            return Some(target);
+        }
+
         let transitions = self.compiled.dfa.transitions_for(state);
         for transition in transitions {
             if transition.start <= ch && ch <= transition.end {

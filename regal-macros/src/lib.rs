@@ -263,6 +263,7 @@ fn emit_codegen(
     let token_count = specs.len();
     let states_len = dfa.states.len();
     let transitions_len = dfa.transitions.len();
+    let dense_slots = dfa.dense.len();
 
     let enum_path = specs
         .iter()
@@ -293,6 +294,9 @@ fn emit_codegen(
             .unwrap_or_else(|| quote! { None });
         let priority = state.priority;
         let possible_bits: Vec<bool> = state.possible.clone();
+        let dense_offset = state.dense_offset;
+        let dense_len = state.dense_len;
+        let dense_start = state.dense_start;
         let bit_array = possible_bits.iter().map(|b| {
             let value = *b;
             quote! { #value }
@@ -304,6 +308,9 @@ fn emit_codegen(
                 accept_token: #accept,
                 priority: #priority,
                 possible: regal::Bitset::from_array([#(#bit_array),*]),
+                dense_offset: #dense_offset,
+                dense_len: #dense_len,
+                dense_start: #dense_start,
             }
         }
     });
@@ -321,6 +328,11 @@ fn emit_codegen(
         }
     });
 
+    let dense_entries = dfa.dense.iter().map(|value| {
+        let entry = *value;
+        quote! { #entry }
+    });
+
     let lexer_ident = format_ident!("__REGAL_LEXER");
     let start_state = dfa.start;
 
@@ -329,7 +341,8 @@ fn emit_codegen(
             #enum_ident,
             #token_count,
             #states_len,
-            #transitions_len
+            #transitions_len,
+            #dense_slots
         > = regal::CompiledLexer::from_parts(
             regal::PackedDfa::from_parts(
                 #start_state,
@@ -337,6 +350,8 @@ fn emit_codegen(
                 #states_len,
                 [#(#transitions),*],
                 #transitions_len,
+                [#(#dense_entries),*],
+                #dense_slots,
             ),
             [#(#token_info),*]
         );
@@ -346,7 +361,8 @@ fn emit_codegen(
                 #enum_ident,
                 #token_count,
                 #states_len,
-                #transitions_len
+                #transitions_len,
+                #dense_slots
             > {
                 &#lexer_ident
             }

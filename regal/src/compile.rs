@@ -19,14 +19,20 @@ pub enum CompileError {
     Dfa(DfaError),
 }
 
-pub struct CompiledLexer<T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize> {
-    pub(crate) dfa: PackedDfa<STATES, TRANSITIONS, TOKENS>,
+pub struct CompiledLexer<
+    T,
+    const TOKENS: usize,
+    const STATES: usize,
+    const TRANSITIONS: usize,
+    const DENSE: usize,
+> {
+    pub(crate) dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE>,
     pub(crate) token_info: [TokenInfo<T>; TOKENS],
     _marker: PhantomData<T>,
 }
 
-impl<T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize>
-    CompiledLexer<T, TOKENS, STATES, TRANSITIONS>
+impl<T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize, const DENSE: usize>
+    CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>
 where
     T: Copy + Default,
 {
@@ -40,12 +46,12 @@ where
         self.token_info.get(id as usize)
     }
 
-    pub fn lexer(&self) -> crate::lexer::Lexer<'_, T, TOKENS, STATES, TRANSITIONS> {
+    pub fn lexer(&self) -> crate::lexer::Lexer<'_, T, TOKENS, STATES, TRANSITIONS, DENSE> {
         crate::lexer::Lexer::new(self)
     }
 
     pub const fn from_parts(
-        dfa: PackedDfa<STATES, TRANSITIONS, TOKENS>,
+        dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE>,
         token_info: [TokenInfo<T>; TOKENS],
     ) -> Self {
         Self {
@@ -70,6 +76,8 @@ where
 /// * `MAX_BOUNDARIES` – scratch capacity used during subset construction to
 ///   partition character ranges. A conservative value is roughly twice the
 ///   transition bound.
+/// * `MAX_DENSE` – total capacity of dense transition slots generated for
+///   states that operate on compact alphabets.
 ///
 /// The compilation itself happens on the host at build time when invoked from a
 /// procedural macro or a `build.rs` script. The resulting [`CompiledLexer`] is
@@ -84,9 +92,10 @@ pub fn compile<
     const DFA_STATES: usize,
     const DFA_TRANSITIONS: usize,
     const MAX_BOUNDARIES: usize,
+    const MAX_DENSE: usize,
 >(
     specs: &[TokenSpec<'a, T>],
-) -> Result<CompiledLexer<T, TOKENS, DFA_STATES, DFA_TRANSITIONS>, CompileError>
+) -> Result<CompiledLexer<T, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE>, CompileError>
 where
     T: Copy + Default,
 {
@@ -120,6 +129,7 @@ where
         DFA_TRANSITIONS,
         TOKENS,
         MAX_BOUNDARIES,
+        MAX_DENSE,
     >(&nfa, start)
     .map_err(CompileError::Dfa)?;
 
