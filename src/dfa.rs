@@ -1,5 +1,6 @@
 use crate::bitset::Bitset;
 use crate::nfa::{Nfa, NfaState};
+use core::cmp;
 use heapless::Vec;
 
 #[derive(Clone)]
@@ -39,6 +40,7 @@ struct RangeCandidate<const N: usize> {
     target: Bitset<N>,
 }
 
+#[allow(dead_code)]
 impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>
     Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>
 {
@@ -80,6 +82,104 @@ impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: us
 
     pub fn possible_tokens(&self, state: u16) -> Bitset<MAX_TOKENS> {
         self.states[state as usize].possible
+    }
+}
+
+#[derive(Clone)]
+pub struct PackedDfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>
+{
+    states_len: usize,
+    transitions_len: usize,
+    states: [DfaState<MAX_TOKENS>; MAX_STATES],
+    transitions: [DfaTransition; MAX_TRANSITIONS],
+    start: u16,
+}
+
+impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>
+    PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>
+{
+    pub const fn start_state(&self) -> u16 {
+        self.start
+    }
+
+    pub const fn state_len(&self) -> usize {
+        self.states_len
+    }
+
+    pub fn transitions_for(&self, state: u16) -> &[DfaTransition] {
+        let idx = state as usize;
+        if idx >= self.states_len {
+            return &[];
+        }
+        let state_meta = self.states[idx];
+        let start = cmp::min(state_meta.first_transition as usize, self.transitions_len);
+        let end = cmp::min(
+            start + state_meta.transition_len as usize,
+            self.transitions_len,
+        );
+        &self.transitions[start..end]
+    }
+
+    pub fn accept_token(&self, state: u16) -> Option<u16> {
+        let idx = state as usize;
+        if idx >= self.states_len {
+            None
+        } else {
+            self.states[idx].accept_token
+        }
+    }
+
+    pub fn possible_tokens(&self, state: u16) -> Bitset<MAX_TOKENS> {
+        let idx = state as usize;
+        if idx >= self.states_len {
+            Bitset::new()
+        } else {
+            self.states[idx].possible
+        }
+    }
+
+    pub fn transitions(&self) -> &[DfaTransition] {
+        &self.transitions[..self.transitions_len]
+    }
+
+    pub fn states(&self) -> &[DfaState<MAX_TOKENS>] {
+        &self.states[..self.states_len]
+    }
+
+    pub const fn from_parts(
+        start: u16,
+        states: [DfaState<MAX_TOKENS>; MAX_STATES],
+        states_len: usize,
+        transitions: [DfaTransition; MAX_TRANSITIONS],
+        transitions_len: usize,
+    ) -> Self {
+        Self {
+            states_len,
+            transitions_len,
+            states,
+            transitions,
+            start,
+        }
+    }
+}
+
+pub fn pack_dfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_TOKENS: usize>(
+    dfa: &Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS>,
+) -> PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS> {
+    let mut states = [DfaState::default(); MAX_STATES];
+    for (index, state) in dfa.states.iter().enumerate() {
+        states[index] = *state;
+    }
+    let mut transitions = [DfaTransition::default(); MAX_TRANSITIONS];
+    for (index, trans) in dfa.transitions.iter().enumerate() {
+        transitions[index] = *trans;
+    }
+    PackedDfa {
+        states_len: dfa.states.len(),
+        transitions_len: dfa.transitions.len(),
+        states,
+        transitions,
+        start: dfa.start,
     }
 }
 

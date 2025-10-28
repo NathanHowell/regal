@@ -1,4 +1,4 @@
-use crate::dfa::{Dfa, DfaError, determinize, minimize};
+use crate::dfa::{DfaError, PackedDfa, determinize, minimize, pack_dfa};
 use crate::lexer::TokenInfo;
 use crate::nfa::{Nfa, NfaError, compile_pattern};
 use crate::pattern::Pattern;
@@ -20,7 +20,7 @@ pub enum CompileError {
 }
 
 pub struct CompiledLexer<T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize> {
-    pub(crate) dfa: Dfa<STATES, TRANSITIONS, TOKENS>,
+    pub(crate) dfa: PackedDfa<STATES, TRANSITIONS, TOKENS>,
     pub(crate) token_info: [TokenInfo<T>; TOKENS],
     _marker: PhantomData<T>,
 }
@@ -42,6 +42,17 @@ where
 
     pub fn lexer(&self) -> crate::lexer::Lexer<'_, T, TOKENS, STATES, TRANSITIONS> {
         crate::lexer::Lexer::new(self)
+    }
+
+    pub const fn from_parts(
+        dfa: PackedDfa<STATES, TRANSITIONS, TOKENS>,
+        token_info: [TokenInfo<T>; TOKENS],
+    ) -> Self {
+        Self {
+            dfa,
+            token_info,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -113,9 +124,10 @@ where
     .map_err(CompileError::Dfa)?;
 
     let minimized = minimize(&dfa).map_err(CompileError::Dfa)?;
+    let packed = pack_dfa(&minimized);
 
     Ok(CompiledLexer {
-        dfa: minimized,
+        dfa: packed,
         token_info: tokens,
         _marker: PhantomData,
     })

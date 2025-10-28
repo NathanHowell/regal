@@ -1,6 +1,6 @@
 use regal::{
-    compile, CharCategory, ClassAtom, CompiledLexer, CursorView, Pattern, PatternNode,
-    TokenCache, TokenRecord, TokenSpec, TextEdit,
+    CharCategory, ClassAtom, CompiledLexer, CursorView, Pattern, PatternNode, TextEdit, TokenCache,
+    TokenRecord, TokenSpec, compile,
 };
 use std::vec::Vec;
 
@@ -218,9 +218,7 @@ fn rebuild_is_deterministic() {
         .expect("initial rebuild");
     let first = cache.tokens().to_vec();
 
-    cache
-        .rebuild(&compiled, "foo foo")
-        .expect("repeat rebuild");
+    cache.rebuild(&compiled, "foo foo").expect("repeat rebuild");
     let second = cache.tokens();
 
     assert_eq!(first, second);

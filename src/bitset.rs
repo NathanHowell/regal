@@ -10,6 +10,10 @@ impl<const N: usize> Bitset<N> {
         Self { data: [false; N] }
     }
 
+    pub const fn from_array(data: [bool; N]) -> Self {
+        Self { data }
+    }
+
     pub const fn is_empty(&self) -> bool {
         let mut idx = 0;
         while idx < N {
