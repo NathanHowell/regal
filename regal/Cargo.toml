@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-heapless = { version = "0.8", default-features = false }
+heapless.workspace = true
 
 [dev-dependencies]
 regal-macros = { path = "../regal-macros" }

@@ -4,3 +4,10 @@ members = [
     "regal-macros",
 ]
 resolver = "2"
+
+[workspace.dependencies]
+heapless = { version = "0.8", default-features = false }
+proc-macro2 = "1"
+quote = "1"
+regex-syntax = "0.8"
+syn = { version = "2", features = ["full"] }
