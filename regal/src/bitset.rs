@@ -29,13 +29,13 @@ impl<const N: usize> Bitset<N> {
         if bit < N { self.data[bit] } else { false }
     }
 
-    pub fn insert(&mut self, bit: usize) {
+    pub(crate) fn insert(&mut self, bit: usize) {
         if bit < N {
             self.data[bit] = true;
         }
     }
 
-    pub fn union_with(&mut self, other: &Self) {
+    pub(crate) fn union_with(&mut self, other: &Self) {
         let mut idx = 0;
         while idx < N {
             self.data[idx] = self.data[idx] || other.data[idx];
@@ -43,7 +43,7 @@ impl<const N: usize> Bitset<N> {
         }
     }
 
-    pub fn iter(&self) -> BitsetIter<N> {
+    pub(crate) fn iter(&self) -> BitsetIter<N> {
         BitsetIter {
             set: *self,
             next: 0,
@@ -73,7 +73,7 @@ impl<const N: usize> fmt::Debug for Bitset<N> {
     }
 }
 
-pub struct BitsetIter<const N: usize> {
+pub(crate) struct BitsetIter<const N: usize> {
     set: Bitset<N>,
     next: usize,
 }

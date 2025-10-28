@@ -8,15 +8,15 @@ const INVALID_TARGET: u16 = u16::MAX;
 const DENSE_SPAN_LIMIT: u32 = 128;
 
 #[derive(Clone)]
-pub struct DynamicDfaState {
-    pub first_transition: u32,
-    pub transition_len: u32,
-    pub accept_token: Option<u16>,
-    pub priority: u16,
-    pub possible: Vec<bool>,
-    pub dense_offset: u32,
-    pub dense_len: u32,
-    pub dense_start: u32,
+pub(crate) struct DynamicDfaState {
+    pub(crate) first_transition: u32,
+    pub(crate) transition_len: u32,
+    pub(crate) accept_token: Option<u16>,
+    pub(crate) priority: u16,
+    pub(crate) possible: Vec<bool>,
+    pub(crate) dense_offset: u32,
+    pub(crate) dense_len: u32,
+    pub(crate) dense_start: u32,
 }
 
 impl DynamicDfaState {
@@ -35,21 +35,21 @@ impl DynamicDfaState {
 }
 
 #[derive(Clone)]
-pub struct DynamicDfaTransition {
-    pub start: u32,
-    pub end: u32,
-    pub target: u16,
+pub(crate) struct DynamicDfaTransition {
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+    pub(crate) target: u16,
 }
 
 #[derive(Clone)]
-pub struct DynamicDfa {
-    pub states: Vec<DynamicDfaState>,
-    pub transitions: Vec<DynamicDfaTransition>,
-    pub start: u16,
-    pub dense: Vec<u16>,
+pub(crate) struct DynamicDfa {
+    pub(crate) states: Vec<DynamicDfaState>,
+    pub(crate) transitions: Vec<DynamicDfaTransition>,
+    pub(crate) start: u16,
+    pub(crate) dense: Vec<u16>,
 }
 
-pub fn build_dfa(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, String> {
+pub(crate) fn build_dfa(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, String> {
     let dfa = determinize(nfa, token_count)?;
     minimize(dfa, token_count)
 }

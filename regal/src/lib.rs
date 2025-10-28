@@ -17,7 +17,7 @@ pub use incremental::{
     CursorView, IncrementalError, PartialCandidate, PartialToken, TextEdit, TokenCache, TokenRecord,
 };
 pub use lexer::{Advance, Checkpoint, Lexer, LexerError, Match, TokenInfo};
-pub use nfa::{NfaError, NfaState, NfaTransition};
+pub use nfa::NfaError;
 pub use pattern::{CharCategory, ClassAtom, Pattern, PatternNode};
 
 pub mod prelude {
@@ -29,6 +29,6 @@ pub mod prelude {
         TokenRecord,
     };
     pub use crate::lexer::{Advance, Checkpoint, Lexer, LexerError, Match, TokenInfo};
-    pub use crate::nfa::{NfaError, NfaState, NfaTransition};
+    pub use crate::nfa::NfaError;
     pub use crate::pattern::{CharCategory, ClassAtom, Pattern, PatternNode};
 }

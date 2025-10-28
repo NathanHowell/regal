@@ -3,7 +3,7 @@ use regex_syntax::hir::{self, Hir, HirKind, Literal};
 use std::vec::Vec;
 
 #[derive(Clone)]
-pub enum PatternExpr {
+pub(crate) enum PatternExpr {
     Empty,
     Literal(Vec<u8>),
     Class(Vec<ClassAtom>),
@@ -17,12 +17,12 @@ pub enum PatternExpr {
 }
 
 #[derive(Clone)]
-pub enum ClassAtom {
+pub(crate) enum ClassAtom {
     Char(u32),
     Range { start: u32, end: u32 },
 }
 
-pub fn parse_pattern(pattern: &str) -> Result<PatternExpr, String> {
+pub(crate) fn parse_pattern(pattern: &str) -> Result<PatternExpr, String> {
     let hir = ParserBuilder::new()
         .build()
         .parse(pattern)

@@ -7,16 +7,16 @@ pub(crate) const INVALID_TARGET: u16 = u16::MAX;
 const DENSE_SPAN_LIMIT: u32 = 128;
 
 #[derive(Clone)]
-pub struct Dfa<
+pub(crate) struct Dfa<
     const MAX_STATES: usize,
     const MAX_TRANSITIONS: usize,
     const MAX_TOKENS: usize,
     const MAX_DENSE: usize,
 > {
-    pub states: Vec<DfaState<MAX_TOKENS>, MAX_STATES>,
-    pub transitions: Vec<DfaTransition, MAX_TRANSITIONS>,
-    pub dense: Vec<u16, MAX_DENSE>,
-    pub start: u16,
+    pub(crate) states: Vec<DfaState<MAX_TOKENS>, MAX_STATES>,
+    pub(crate) transitions: Vec<DfaTransition, MAX_TRANSITIONS>,
+    pub(crate) dense: Vec<u16, MAX_DENSE>,
+    pub(crate) start: u16,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -61,7 +61,7 @@ impl<
     const MAX_DENSE: usize,
 > Dfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>
 {
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             states: Vec::new(),
             transitions: Vec::new(),
@@ -70,7 +70,7 @@ impl<
         }
     }
 
-    pub const fn start_state(&self) -> u16 {
+    pub(crate) const fn start_state(&self) -> u16 {
         self.start
     }
 
@@ -87,18 +87,18 @@ impl<
             .map_err(|_| DfaError::TransitionOverflow)
     }
 
-    pub fn transitions_for(&self, state: u16) -> &[DfaTransition] {
+    pub(crate) fn transitions_for(&self, state: u16) -> &[DfaTransition] {
         let state = self.states[state as usize];
         let start = state.first_transition as usize;
         let end = start + state.transition_len as usize;
         &self.transitions[start..end]
     }
 
-    pub fn accept_token(&self, state: u16) -> Option<u16> {
+    pub(crate) fn accept_token(&self, state: u16) -> Option<u16> {
         self.states[state as usize].accept_token
     }
 
-    pub fn possible_tokens(&self, state: u16) -> Bitset<MAX_TOKENS> {
+    pub(crate) fn possible_tokens(&self, state: u16) -> Bitset<MAX_TOKENS> {
         self.states[state as usize].possible
     }
 
@@ -135,15 +135,11 @@ impl<
     const MAX_DENSE: usize,
 > PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>
 {
-    pub const fn start_state(&self) -> u16 {
+    pub(crate) const fn start_state(&self) -> u16 {
         self.start
     }
 
-    pub const fn state_len(&self) -> usize {
-        self.states_len
-    }
-
-    pub fn transitions_for(&self, state: u16) -> &[DfaTransition] {
+    pub(crate) fn transitions_for(&self, state: u16) -> &[DfaTransition] {
         let idx = state as usize;
         if idx >= self.states_len {
             return &[];
@@ -157,7 +153,7 @@ impl<
         &self.transitions[start..end]
     }
 
-    pub fn accept_token(&self, state: u16) -> Option<u16> {
+    pub(crate) fn accept_token(&self, state: u16) -> Option<u16> {
         let idx = state as usize;
         if idx >= self.states_len {
             None
@@ -166,7 +162,7 @@ impl<
         }
     }
 
-    pub fn possible_tokens(&self, state: u16) -> Bitset<MAX_TOKENS> {
+    pub(crate) fn possible_tokens(&self, state: u16) -> Bitset<MAX_TOKENS> {
         let idx = state as usize;
         if idx >= self.states_len {
             Bitset::new()
@@ -175,25 +171,17 @@ impl<
         }
     }
 
-    pub fn transitions(&self) -> &[DfaTransition] {
-        &self.transitions[..self.transitions_len]
-    }
-
-    pub fn states(&self) -> &[DfaState<MAX_TOKENS>] {
-        &self.states[..self.states_len]
-    }
-
-    pub fn state(&self, state: u16) -> Option<&DfaState<MAX_TOKENS>> {
+    pub(crate) fn state(&self, state: u16) -> Option<&DfaState<MAX_TOKENS>> {
         self.states.get(state as usize)
     }
 
-    pub fn dense_slice(&self, offset: u32, len: u32) -> &[u16] {
+    pub(crate) fn dense_slice(&self, offset: u32, len: u32) -> &[u16] {
         let start = cmp::min(offset as usize, self.dense_len);
         let end = cmp::min(start + len as usize, self.dense_len);
         &self.dense[start..end]
     }
 
-    pub fn dense_target(&self, state: u16, ch: u32) -> Option<u16> {
+    pub(crate) fn dense_target(&self, state: u16, ch: u32) -> Option<u16> {
         let meta = self.state(state)?;
         if meta.dense_len == 0 {
             return None;
@@ -238,7 +226,7 @@ impl<
     }
 }
 
-pub fn pack_dfa<
+pub(crate) fn pack_dfa<
     const MAX_STATES: usize,
     const MAX_TRANSITIONS: usize,
     const MAX_TOKENS: usize,
@@ -269,7 +257,7 @@ pub fn pack_dfa<
     }
 }
 
-pub fn determinize<
+pub(crate) fn determinize<
     const NFA_STATES: usize,
     const NFA_TRANSITIONS: usize,
     const NFA_EPSILONS: usize,
@@ -356,7 +344,7 @@ pub fn determinize<
     Ok(dfa)
 }
 
-pub fn minimize<
+pub(crate) fn minimize<
     const MAX_STATES: usize,
     const MAX_TRANSITIONS: usize,
     const MAX_TOKENS: usize,

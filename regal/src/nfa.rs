@@ -2,16 +2,20 @@ use crate::pattern::{CharCategory, ClassAtom, Pattern, PatternNode};
 use heapless::Vec;
 
 #[derive(Clone)]
-pub struct Nfa<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_EPSILONS: usize> {
-    pub states: Vec<NfaState, MAX_STATES>,
-    pub transitions: Vec<NfaTransition, MAX_TRANSITIONS>,
-    pub epsilons: Vec<NfaEpsilon, MAX_EPSILONS>,
+pub(crate) struct Nfa<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_EPSILONS: usize,
+> {
+    pub(crate) states: Vec<NfaState, MAX_STATES>,
+    pub(crate) transitions: Vec<NfaTransition, MAX_TRANSITIONS>,
+    pub(crate) epsilons: Vec<NfaEpsilon, MAX_EPSILONS>,
 }
 
 #[derive(Copy, Clone)]
-pub struct NfaState {
-    pub accept_token: Option<u16>,
-    pub priority: u16,
+pub(crate) struct NfaState {
+    pub(crate) accept_token: Option<u16>,
+    pub(crate) priority: u16,
 }
 
 impl Default for NfaState {
@@ -24,17 +28,17 @@ impl Default for NfaState {
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct NfaTransition {
-    pub from: u16,
-    pub to: u16,
-    pub start: u32,
-    pub end: u32,
+pub(crate) struct NfaTransition {
+    pub(crate) from: u16,
+    pub(crate) to: u16,
+    pub(crate) start: u32,
+    pub(crate) end: u32,
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct NfaEpsilon {
-    pub from: u16,
-    pub to: u16,
+pub(crate) struct NfaEpsilon {
+    pub(crate) from: u16,
+    pub(crate) to: u16,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -48,7 +52,7 @@ pub enum NfaError {
 impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_EPSILONS: usize>
     Nfa<MAX_STATES, MAX_TRANSITIONS, MAX_EPSILONS>
 {
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             states: Vec::new(),
             transitions: Vec::new(),
@@ -56,14 +60,14 @@ impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_EPSILONS: 
         }
     }
 
-    pub fn add_state(&mut self) -> Result<u16, NfaError> {
+    pub(crate) fn add_state(&mut self) -> Result<u16, NfaError> {
         self.states
             .push(NfaState::default())
             .map_err(|_| NfaError::StateOverflow)?;
         Ok((self.states.len() - 1) as u16)
     }
 
-    pub fn mark_accept(&mut self, state: u16, token: u16, priority: u16) {
+    pub(crate) fn mark_accept(&mut self, state: u16, token: u16, priority: u16) {
         if let Some(entry) = self.states.get_mut(state as usize) {
             match entry.accept_token {
                 Some(existing) => {
@@ -82,7 +86,7 @@ impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_EPSILONS: 
         }
     }
 
-    pub fn add_transition(
+    pub(crate) fn add_transition(
         &mut self,
         from: u16,
         to: u16,
@@ -99,14 +103,14 @@ impl<const MAX_STATES: usize, const MAX_TRANSITIONS: usize, const MAX_EPSILONS: 
             .map_err(|_| NfaError::TransitionOverflow)
     }
 
-    pub fn add_epsilon(&mut self, from: u16, to: u16) -> Result<(), NfaError> {
+    pub(crate) fn add_epsilon(&mut self, from: u16, to: u16) -> Result<(), NfaError> {
         self.epsilons
             .push(NfaEpsilon { from, to })
             .map_err(|_| NfaError::EpsilonOverflow)
     }
 }
 
-pub fn compile_pattern<
+pub(crate) fn compile_pattern<
     const MAX_STATES: usize,
     const MAX_TRANSITIONS: usize,
     const MAX_EPSILONS: usize,

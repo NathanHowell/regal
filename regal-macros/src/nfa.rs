@@ -2,16 +2,16 @@ use crate::pattern::{ClassAtom, PatternExpr};
 use std::vec::Vec;
 
 #[derive(Clone)]
-pub struct NfaSpec {
-    pub pattern: PatternExpr,
-    pub token_id: u16,
-    pub priority: u16,
+pub(crate) struct NfaSpec {
+    pub(crate) pattern: PatternExpr,
+    pub(crate) token_id: u16,
+    pub(crate) priority: u16,
 }
 
 #[derive(Clone)]
-pub struct NfaState {
-    pub accept_token: Option<u16>,
-    pub priority: u16,
+pub(crate) struct NfaState {
+    pub(crate) accept_token: Option<u16>,
+    pub(crate) priority: u16,
 }
 
 impl NfaState {
@@ -24,27 +24,27 @@ impl NfaState {
 }
 
 #[derive(Clone)]
-pub struct NfaTransition {
-    pub from: u16,
-    pub to: u16,
-    pub start: u32,
-    pub end: u32,
+pub(crate) struct NfaTransition {
+    pub(crate) from: u16,
+    pub(crate) to: u16,
+    pub(crate) start: u32,
+    pub(crate) end: u32,
 }
 
 #[derive(Clone)]
-pub struct NfaEpsilon {
-    pub from: u16,
-    pub to: u16,
+pub(crate) struct NfaEpsilon {
+    pub(crate) from: u16,
+    pub(crate) to: u16,
 }
 
-pub struct DynamicNfa {
-    pub states: Vec<NfaState>,
-    pub transitions: Vec<NfaTransition>,
-    pub epsilons: Vec<NfaEpsilon>,
-    pub start: u16,
+pub(crate) struct DynamicNfa {
+    pub(crate) states: Vec<NfaState>,
+    pub(crate) transitions: Vec<NfaTransition>,
+    pub(crate) epsilons: Vec<NfaEpsilon>,
+    pub(crate) start: u16,
 }
 
-pub fn build_nfa(specs: &[NfaSpec]) -> Result<DynamicNfa, String> {
+pub(crate) fn build_nfa(specs: &[NfaSpec]) -> Result<DynamicNfa, String> {
     let mut nfa = DynamicNfa {
         states: Vec::new(),
         transitions: Vec::new(),
