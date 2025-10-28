@@ -29,13 +29,13 @@ impl<const N: usize> Bitset<N> {
         if bit < N { self.data[bit] } else { false }
     }
 
-    pub(crate) fn insert(&mut self, bit: usize) {
+    pub(crate) const fn insert(&mut self, bit: usize) {
         if bit < N {
             self.data[bit] = true;
         }
     }
 
-    pub(crate) fn union_with(&mut self, other: &Self) {
+    pub(crate) const fn union_with(&mut self, other: &Self) {
         let mut idx = 0;
         while idx < N {
             self.data[idx] = self.data[idx] || other.data[idx];
@@ -43,7 +43,7 @@ impl<const N: usize> Bitset<N> {
         }
     }
 
-    pub(crate) fn iter(&self) -> BitsetIter<N> {
+    pub(crate) const fn iter(&self) -> BitsetIter<N> {
         BitsetIter {
             set: *self,
             next: 0,
