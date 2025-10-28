@@ -113,7 +113,3 @@ CARGO_NET_OFFLINE=true cargo test
 ```
 
 This command works in offline/sandboxed environments and exercises both the macro crate and the incremental APIs.
-
-## License
-
-See the project’s `Cargo.toml` for licensing information.
