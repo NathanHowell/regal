@@ -1,8 +1,22 @@
-use crate::dfa::{DfaError, PackedDfa, determinize, minimize, pack_dfa};
+#![allow(clippy::too_many_arguments)]
+
+extern crate alloc;
+
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use crate::bitset::Bitset;
+use crate::dfa::{DfaError, DfaState, DfaTransition, INVALID_TARGET, PackedDfa};
 use crate::lexer::TokenInfo;
-use crate::nfa::{Nfa, NfaError, compile_pattern};
-use crate::pattern::Pattern;
+use crate::nfa::NfaError;
+use crate::pattern::{CharCategory, ClassAtom as PatternClassAtom, Pattern, PatternNode};
 use core::marker::PhantomData;
+use heapless::Vec as HeaplessVec;
+use regal_compiler::{
+    ClassAtom as HostClassAtom, HostCompiledDfa, NfaError as HostNfaError, NfaSpec as HostNfaSpec,
+    PatternExpr as HostPatternExpr, build_dfa as host_build_dfa, build_nfa as host_build_nfa,
+};
 
 #[derive(Debug, Copy, Clone)]
 pub struct TokenSpec<'a, T> {
@@ -103,17 +117,16 @@ where
         return Err(CompileError::TooManyTokens);
     }
 
-    let mut nfa: Nfa<NFA_STATES, NFA_TRANSITIONS, NFA_EPSILONS> = Nfa::new();
-    let start = nfa.add_state().map_err(CompileError::Nfa)?;
-
+    let mut host_specs = Vec::with_capacity(specs.len());
     let mut tokens: [TokenInfo<T>; TOKENS] = [TokenInfo::default(); TOKENS];
 
     for (index, spec) in specs.iter().enumerate() {
-        let (pat_start, pat_end) =
-            compile_pattern(&mut nfa, spec.pattern).map_err(CompileError::Nfa)?;
-        nfa.add_epsilon(start, pat_start)
-            .map_err(CompileError::Nfa)?;
-        nfa.mark_accept(pat_end, index as u16, spec.priority);
+        let pattern = convert_pattern(spec.pattern);
+        host_specs.push(HostNfaSpec {
+            pattern,
+            token_id: index as u16,
+            priority: spec.priority,
+        });
         tokens[index] = TokenInfo {
             token: spec.token,
             skip: spec.skip,
@@ -121,24 +134,230 @@ where
         };
     }
 
-    let dfa = determinize::<
-        NFA_STATES,
-        NFA_TRANSITIONS,
-        NFA_EPSILONS,
-        DFA_STATES,
-        DFA_TRANSITIONS,
-        TOKENS,
-        MAX_BOUNDARIES,
-        MAX_DENSE,
-    >(&nfa, start)
-    .map_err(CompileError::Dfa)?;
+    let nfa = host_build_nfa(&host_specs).map_err(|err| CompileError::Nfa(map_nfa_error(err)))?;
 
-    let minimized = minimize(&dfa).map_err(CompileError::Dfa)?;
-    let packed = pack_dfa(&minimized);
+    if nfa.states.len() > NFA_STATES {
+        return Err(CompileError::Nfa(NfaError::StateOverflow));
+    }
+    if nfa.transitions.len() > NFA_TRANSITIONS {
+        return Err(CompileError::Nfa(NfaError::TransitionOverflow));
+    }
+    if nfa.epsilons.len() > NFA_EPSILONS {
+        return Err(CompileError::Nfa(NfaError::EpsilonOverflow));
+    }
+
+    let dfa = host_build_dfa(&nfa, specs.len());
+
+    if dfa.states.len() > DFA_STATES {
+        return Err(CompileError::Dfa(DfaError::StateOverflow));
+    }
+    if dfa.transitions.len() > DFA_TRANSITIONS {
+        return Err(CompileError::Dfa(DfaError::TransitionOverflow));
+    }
+    validate_boundaries::<MAX_BOUNDARIES>(&dfa).map_err(CompileError::Dfa)?;
+
+    let packed = pack_host_dfa::<DFA_STATES, DFA_TRANSITIONS, TOKENS, MAX_DENSE>(&dfa)
+        .map_err(CompileError::Dfa)?;
 
     Ok(CompiledLexer {
         dfa: packed,
         token_info: tokens,
         _marker: PhantomData,
     })
+}
+
+fn convert_pattern(pattern: Pattern<'_>) -> HostPatternExpr {
+    match pattern.node() {
+        PatternNode::Empty => HostPatternExpr::Empty,
+        PatternNode::Literal(bytes) => HostPatternExpr::Literal(bytes.to_vec()),
+        PatternNode::Char(ch) => HostPatternExpr::Class(vec![HostClassAtom::Char(*ch)]),
+        PatternNode::Range { start, end } => HostPatternExpr::Class(vec![HostClassAtom::Range {
+            start: *start,
+            end: *end,
+        }]),
+        PatternNode::Class(items) => HostPatternExpr::Class(convert_class_atoms(items)),
+        PatternNode::Sequence(parts) => {
+            let mut seq = Vec::with_capacity(parts.len());
+            for part in *parts {
+                seq.push(convert_pattern(*part));
+            }
+            HostPatternExpr::Sequence(seq)
+        }
+        PatternNode::Alternate(parts) => {
+            let mut alts = Vec::with_capacity(parts.len());
+            for part in *parts {
+                alts.push(convert_pattern(*part));
+            }
+            HostPatternExpr::Alternate(alts)
+        }
+        PatternNode::Repeat { inner, min, max } => HostPatternExpr::Repeat {
+            inner: Box::new(convert_pattern(*inner)),
+            min: *min,
+            max: *max,
+        },
+    }
+}
+
+fn convert_class_atoms(atoms: &[PatternClassAtom]) -> Vec<HostClassAtom> {
+    let mut result = Vec::new();
+    for atom in atoms {
+        match atom {
+            PatternClassAtom::Char(ch) => result.push(HostClassAtom::Char(*ch)),
+            PatternClassAtom::Range { start, end } => result.push(HostClassAtom::Range {
+                start: *start,
+                end: *end,
+            }),
+            PatternClassAtom::Category(cat) => expand_category(*cat, &mut result),
+        }
+    }
+    result
+}
+
+fn expand_category(category: CharCategory, into: &mut Vec<HostClassAtom>) {
+    match category {
+        CharCategory::Alphabetic => {
+            into.push(HostClassAtom::Range {
+                start: b'A' as u32,
+                end: b'Z' as u32,
+            });
+            into.push(HostClassAtom::Range {
+                start: b'a' as u32,
+                end: b'z' as u32,
+            });
+        }
+        CharCategory::Numeric => {
+            into.push(HostClassAtom::Range {
+                start: b'0' as u32,
+                end: b'9' as u32,
+            });
+        }
+        CharCategory::Alphanumeric => {
+            expand_category(CharCategory::Alphabetic, into);
+            expand_category(CharCategory::Numeric, into);
+        }
+        CharCategory::Whitespace => {
+            for ch in [0x09u32, 0x0A, 0x0B, 0x0C, 0x0D, 0x20] {
+                into.push(HostClassAtom::Char(ch));
+            }
+        }
+        CharCategory::Lowercase => {
+            into.push(HostClassAtom::Range {
+                start: b'a' as u32,
+                end: b'z' as u32,
+            });
+        }
+        CharCategory::Uppercase => {
+            into.push(HostClassAtom::Range {
+                start: b'A' as u32,
+                end: b'Z' as u32,
+            });
+        }
+        CharCategory::HexDigit => {
+            expand_category(CharCategory::Numeric, into);
+            into.push(HostClassAtom::Range {
+                start: b'a' as u32,
+                end: b'f' as u32,
+            });
+            into.push(HostClassAtom::Range {
+                start: b'A' as u32,
+                end: b'F' as u32,
+            });
+        }
+    }
+}
+
+fn map_nfa_error(err: HostNfaError) -> NfaError {
+    match err {
+        HostNfaError::InvalidRepeat => NfaError::InvalidRepeat,
+    }
+}
+
+fn validate_boundaries<const MAX_BOUNDARIES: usize>(dfa: &HostCompiledDfa) -> Result<(), DfaError> {
+    for state in &dfa.states {
+        let mut boundaries: HeaplessVec<u32, MAX_BOUNDARIES> = HeaplessVec::new();
+        push_unique(&mut boundaries, 0)?;
+
+        let start = state.first_transition as usize;
+        let end = start + state.transition_len as usize;
+        for trans in &dfa.transitions[start..end] {
+            push_unique(&mut boundaries, trans.start)?;
+            if trans.end == u32::MAX {
+                push_unique(&mut boundaries, u32::MAX)?;
+            } else {
+                push_unique(&mut boundaries, trans.end + 1)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn push_unique<const CAP: usize>(
+    set: &mut HeaplessVec<u32, CAP>,
+    value: u32,
+) -> Result<(), DfaError> {
+    if set.iter().any(|&existing| existing == value) {
+        return Ok(());
+    }
+    set.push(value).map_err(|_| DfaError::WorkspaceOverflow)
+}
+
+fn pack_host_dfa<
+    const MAX_STATES: usize,
+    const MAX_TRANSITIONS: usize,
+    const MAX_TOKENS: usize,
+    const MAX_DENSE: usize,
+>(
+    dfa: &HostCompiledDfa,
+) -> Result<PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>, DfaError> {
+    if dfa.states.len() > MAX_STATES {
+        return Err(DfaError::StateOverflow);
+    }
+    if dfa.transitions.len() > MAX_TRANSITIONS {
+        return Err(DfaError::TransitionOverflow);
+    }
+    let mut states = [DfaState::default(); MAX_STATES];
+    for (idx, state) in dfa.states.iter().enumerate() {
+        let mut converted = DfaState::default();
+        converted.first_transition = state.first_transition;
+        converted.transition_len = state.transition_len;
+        converted.accept_token = state.accept_token;
+        converted.priority = state.priority;
+        converted.possible = bitset_from_possible::<MAX_TOKENS>(&state.possible)?;
+
+        states[idx] = converted;
+    }
+
+    let mut transitions = [DfaTransition::default(); MAX_TRANSITIONS];
+    for (idx, trans) in dfa.transitions.iter().enumerate() {
+        transitions[idx] = DfaTransition {
+            start: trans.start,
+            end: trans.end,
+            target: trans.target,
+        };
+    }
+
+    Ok(PackedDfa::from_parts(
+        dfa.start,
+        states,
+        dfa.states.len(),
+        transitions,
+        dfa.transitions.len(),
+        [INVALID_TARGET; MAX_DENSE],
+        0,
+    ))
+}
+
+fn bitset_from_possible<const MAX_TOKENS: usize>(
+    possible: &[bool],
+) -> Result<Bitset<MAX_TOKENS>, DfaError> {
+    let mut bitset = Bitset::new();
+    if possible.len() > MAX_TOKENS {
+        return Err(DfaError::StateOverflow);
+    }
+    for (idx, flag) in possible.iter().enumerate() {
+        if *flag {
+            bitset.insert(idx);
+        }
+    }
+    Ok(bitset)
 }

@@ -1,14 +1,12 @@
-mod bitset;
-mod dfa;
-mod nfa;
 mod pattern;
 
-use crate::dfa::{DynamicDfa, build_dfa};
-use crate::nfa::{NfaSpec, build_nfa};
 use crate::pattern::parse_pattern;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
+use regal_compiler::{
+    HostCompiledDfa, NfaError as HostNfaError, NfaSpec as HostNfaSpec, build_dfa, build_nfa,
+};
 use syn::punctuated::Punctuated;
 use syn::{Attribute, Data, DeriveInput, Expr, ExprLit, Meta, parse_macro_input, spanned::Spanned};
 
@@ -110,7 +108,7 @@ fn expand_regal_lexer(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
     for (index, spec) in specs.iter().enumerate() {
         let parsed =
             parse_pattern(&spec.pattern).map_err(|err| syn::Error::new(Span::call_site(), err))?;
-        nfa_specs.push(NfaSpec {
+        nfa_specs.push(HostNfaSpec {
             pattern: parsed,
             token_id: index as u16,
             priority: spec.priority,
@@ -121,10 +119,9 @@ fn expand_regal_lexer(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
         });
     }
 
-    let nfa =
-        build_nfa(&nfa_specs).map_err(|err| syn::Error::new(Span::call_site(), err.to_string()))?;
-    let dynamic_dfa =
-        build_dfa(&nfa, token_meta.len()).map_err(|err| syn::Error::new(Span::call_site(), err))?;
+    let nfa = build_nfa(&nfa_specs)
+        .map_err(|err| syn::Error::new(Span::call_site(), describe_nfa_error(err)))?;
+    let dynamic_dfa = build_dfa(&nfa, token_meta.len());
 
     let generated = emit_codegen(enum_ident, specs, token_meta, dynamic_dfa)?;
 
@@ -240,6 +237,12 @@ fn parse_pattern_attr(attr: &Attribute, is_token: bool) -> syn::Result<PatternAt
     })
 }
 
+fn describe_nfa_error(err: HostNfaError) -> &'static str {
+    match err {
+        HostNfaError::InvalidRepeat => "invalid repetition range",
+    }
+}
+
 fn escape_literal(input: &str) -> String {
     let mut escaped = String::with_capacity(input.len() * 2);
     for ch in input.chars() {
@@ -258,12 +261,12 @@ fn emit_codegen(
     enum_ident: syn::Ident,
     specs: Vec<SpecDescriptor>,
     tokens: Vec<TokenMeta>,
-    dfa: DynamicDfa,
+    dfa: HostCompiledDfa,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let token_count = specs.len();
     let states_len = dfa.states.len();
     let transitions_len = dfa.transitions.len();
-    let dense_slots = dfa.dense.len();
+    let dense_slots = 0usize;
 
     let enum_path = specs
         .iter()
@@ -294,9 +297,6 @@ fn emit_codegen(
             .unwrap_or_else(|| quote! { None });
         let priority = state.priority;
         let possible_bits: Vec<bool> = state.possible.clone();
-        let dense_offset = state.dense_offset;
-        let dense_len = state.dense_len;
-        let dense_start = state.dense_start;
         let bit_array = possible_bits.iter().map(|b| {
             let value = *b;
             quote! { #value }
@@ -308,9 +308,9 @@ fn emit_codegen(
                 accept_token: #accept,
                 priority: #priority,
                 possible: regal::Bitset::from_array([#(#bit_array),*]),
-                dense_offset: #dense_offset,
-                dense_len: #dense_len,
-                dense_start: #dense_start,
+                dense_offset: 0,
+                dense_len: 0,
+                dense_start: 0,
             }
         }
     });
@@ -328,10 +328,7 @@ fn emit_codegen(
         }
     });
 
-    let dense_entries = dfa.dense.iter().map(|value| {
-        let entry = *value;
-        quote! { #entry }
-    });
+    let dense_entries: Vec<proc_macro2::TokenStream> = Vec::new();
 
     let lexer_ident = format_ident!("__REGAL_LEXER");
     let start_state = dfa.start;

@@ -1,26 +1,8 @@
+use regal_compiler::{ClassAtom, PatternExpr};
 use regex_syntax::ParserBuilder;
 use regex_syntax::hir::{self, Hir, HirKind, Literal};
+use std::boxed::Box;
 use std::vec::Vec;
-
-#[derive(Clone)]
-pub(crate) enum PatternExpr {
-    Empty,
-    Literal(Vec<u8>),
-    Class(Vec<ClassAtom>),
-    Sequence(Vec<PatternExpr>),
-    Alternate(Vec<PatternExpr>),
-    Repeat {
-        inner: Box<PatternExpr>,
-        min: u32,
-        max: Option<u32>,
-    },
-}
-
-#[derive(Clone)]
-pub(crate) enum ClassAtom {
-    Char(u32),
-    Range { start: u32, end: u32 },
-}
 
 pub(crate) fn parse_pattern(pattern: &str) -> Result<PatternExpr, String> {
     let hir = ParserBuilder::new()

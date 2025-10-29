@@ -2,6 +2,7 @@
 members = [
     "regal",
     "regal-macros",
+    "regal-compiler",
 ]
 resolver = "2"
 

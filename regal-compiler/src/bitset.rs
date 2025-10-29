@@ -1,28 +1,29 @@
-use std::vec::Vec;
+use alloc::vec;
+use alloc::vec::Vec;
 
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct Bitset {
+pub struct Bitset {
     data: Vec<bool>,
 }
 
 impl Bitset {
-    pub(crate) fn new(size: usize) -> Self {
+    pub fn new(size: usize) -> Self {
         Self {
             data: vec![false; size],
         }
     }
 
-    pub(crate) fn insert(&mut self, bit: usize) {
+    pub fn insert(&mut self, bit: usize) {
         if bit < self.data.len() {
             self.data[bit] = true;
         }
     }
 
-    pub(crate) fn contains(&self, bit: usize) -> bool {
+    pub fn contains(&self, bit: usize) -> bool {
         bit < self.data.len() && self.data[bit]
     }
 
-    pub(crate) fn union_with(&mut self, other: &Self) -> bool {
+    pub fn union_with(&mut self, other: &Self) -> bool {
         let len = self.data.len().min(other.data.len());
         let mut changed = false;
         for idx in 0..len {
@@ -35,11 +36,11 @@ impl Bitset {
         changed
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
-        self.data.iter().all(|v| !*v)
+    pub fn is_empty(&self) -> bool {
+        self.data.iter().all(|flag| !*flag)
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = usize> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = usize> + '_ {
         self.data
             .iter()
             .enumerate()
@@ -47,7 +48,7 @@ impl Bitset {
             .map(|(idx, _)| idx)
     }
 
-    pub(crate) fn to_vec(&self) -> Vec<bool> {
+    pub fn to_vec(&self) -> Vec<bool> {
         self.data.clone()
     }
 }

@@ -35,6 +35,7 @@ impl<const N: usize> Bitset<N> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) const fn union_with(&mut self, other: &Self) {
         let mut idx = 0;
         while idx < N {

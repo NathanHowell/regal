@@ -1,25 +1,25 @@
 use crate::bitset::Bitset;
 use crate::nfa::{DynamicNfa, NfaState};
-use std::cmp;
-use std::collections::HashMap;
-use std::vec::Vec;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cmp;
 
 const INVALID_TARGET: u16 = u16::MAX;
 const DENSE_SPAN_LIMIT: u32 = 128;
 
 #[derive(Clone)]
-pub(crate) struct DynamicDfaState {
-    pub(crate) first_transition: u32,
-    pub(crate) transition_len: u32,
-    pub(crate) accept_token: Option<u16>,
-    pub(crate) priority: u16,
-    pub(crate) possible: Vec<bool>,
-    pub(crate) dense_offset: u32,
-    pub(crate) dense_len: u32,
-    pub(crate) dense_start: u32,
+pub struct HostDfaState {
+    pub first_transition: u32,
+    pub transition_len: u32,
+    pub accept_token: Option<u16>,
+    pub priority: u16,
+    pub possible: Vec<bool>,
+    pub dense_offset: u32,
+    pub dense_len: u32,
+    pub dense_start: u32,
 }
 
-impl DynamicDfaState {
+impl HostDfaState {
     fn new(token_count: usize) -> Self {
         Self {
             first_transition: 0,
@@ -35,40 +35,40 @@ impl DynamicDfaState {
 }
 
 #[derive(Clone)]
-pub(crate) struct DynamicDfaTransition {
-    pub(crate) start: u32,
-    pub(crate) end: u32,
-    pub(crate) target: u16,
+pub struct HostDfaTransition {
+    pub start: u32,
+    pub end: u32,
+    pub target: u16,
 }
 
 #[derive(Clone)]
-pub(crate) struct DynamicDfa {
-    pub(crate) states: Vec<DynamicDfaState>,
-    pub(crate) transitions: Vec<DynamicDfaTransition>,
-    pub(crate) start: u16,
-    pub(crate) dense: Vec<u16>,
+pub struct HostCompiledDfa {
+    pub states: Vec<HostDfaState>,
+    pub transitions: Vec<HostDfaTransition>,
+    pub start: u16,
+    pub dense: Vec<u16>,
 }
 
-pub(crate) fn build_dfa(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, String> {
-    let dfa = determinize(nfa, token_count)?;
+pub fn build_dfa(nfa: &DynamicNfa, token_count: usize) -> HostCompiledDfa {
+    let dfa = determinize(nfa, token_count);
     minimize(dfa, token_count)
 }
 
-fn determinize(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, String> {
+fn determinize(nfa: &DynamicNfa, token_count: usize) -> HostCompiledDfa {
     let nfa_state_count = nfa.states.len();
     let reachability = compute_reachable_tokens(nfa, token_count);
 
-    let mut dfa_states: Vec<DynamicDfaState> = Vec::new();
-    let mut dfa_transitions: Vec<DynamicDfaTransition> = Vec::new();
+    let mut dfa_states: Vec<HostDfaState> = Vec::new();
+    let mut dfa_transitions: Vec<HostDfaTransition> = Vec::new();
     let mut state_sets: Vec<Bitset> = Vec::new();
-    let mut state_index: HashMap<Vec<bool>, u16> = HashMap::new();
+    let mut state_index: Vec<(Vec<bool>, u16)> = Vec::new();
 
     let mut start_set = Bitset::new(nfa_state_count);
     start_set.insert(nfa.start as usize);
     let start_closure = epsilon_closure(nfa, &start_set);
-    state_index.insert(start_closure.to_vec(), 0);
+    state_index.push((start_closure.to_vec(), 0));
     state_sets.push(start_closure.clone());
-    dfa_states.push(DynamicDfaState::new(token_count));
+    dfa_states.push(HostDfaState::new(token_count));
 
     let mut index = 0;
     while index < state_sets.len() {
@@ -95,17 +95,17 @@ fn determinize(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, Strin
             }
             let closure_target = epsilon_closure(nfa, &target);
             let key = closure_target.to_vec();
-            let state_id = if let Some(existing) = state_index.get(&key) {
-                *existing
+            let state_id = if let Some(existing) = find_state(&state_index, &key) {
+                existing
             } else {
                 let new_id = state_sets.len() as u16;
-                state_index.insert(key, new_id);
+                state_index.push((key, new_id));
                 state_sets.push(closure_target.clone());
-                dfa_states.push(DynamicDfaState::new(token_count));
+                dfa_states.push(HostDfaState::new(token_count));
                 new_id
             };
             let end_inclusive = if end == u32::MAX { u32::MAX } else { end - 1 };
-            dfa_transitions.push(DynamicDfaTransition {
+            dfa_transitions.push(HostDfaTransition {
                 start,
                 end: end_inclusive,
                 target: state_id,
@@ -124,20 +124,20 @@ fn determinize(nfa: &DynamicNfa, token_count: usize) -> Result<DynamicDfa, Strin
         index += 1;
     }
 
-    let mut dfa = DynamicDfa {
+    let mut dfa = HostCompiledDfa {
         states: dfa_states,
         transitions: dfa_transitions,
         start: 0,
         dense: Vec::new(),
     };
     populate_dense_tables(&mut dfa);
-    Ok(dfa)
+    dfa
 }
 
-fn minimize(dfa: DynamicDfa, token_count: usize) -> Result<DynamicDfa, String> {
+fn minimize(dfa: HostCompiledDfa, token_count: usize) -> HostCompiledDfa {
     let state_count = dfa.states.len();
     if state_count <= 1 {
-        return Ok(dfa);
+        return dfa;
     }
 
     let mut signatures: Vec<(Option<u16>, u16, Vec<bool>)> = Vec::new();
@@ -158,21 +158,31 @@ fn minimize(dfa: DynamicDfa, token_count: usize) -> Result<DynamicDfa, String> {
     while changed {
         changed = false;
         let mut new_block_ids = block_ids.clone();
-        let mut new_signatures: HashMap<(usize, Vec<(u32, u16)>), usize> = HashMap::new();
+        let mut new_signatures: Vec<SignatureEntry> = Vec::new();
         let mut next_block = 0usize;
 
         for idx in 0..state_count {
             let state = &dfa.states[idx];
             let block = block_ids[idx];
             let signature = build_transition_signature(state, &dfa.transitions, &block_ids);
-            let key = (block, signature);
-            let entry = new_signatures.entry(key).or_insert_with(|| {
-                let current = next_block;
+            let entry_id = if let Some(entry) = new_signatures
+                .iter()
+                .find(|entry| entry.block == block && entry.signature == signature)
+            {
+                entry.new_block
+            } else {
+                let id = next_block;
                 next_block += 1;
-                current
-            });
-            if new_block_ids[idx] != *entry {
-                new_block_ids[idx] = *entry;
+                new_signatures.push(SignatureEntry {
+                    block,
+                    signature: signature.clone(),
+                    new_block: id,
+                });
+                id
+            };
+
+            if new_block_ids[idx] != entry_id {
+                new_block_ids[idx] = entry_id;
                 changed = true;
             }
         }
@@ -193,7 +203,7 @@ fn minimize(dfa: DynamicDfa, token_count: usize) -> Result<DynamicDfa, String> {
             None => continue,
         };
         let state = &dfa.states[idx];
-        let mut remapped_state = DynamicDfaState::new(token_count);
+        let mut remapped_state = HostDfaState::new(token_count);
         remapped_state.accept_token = state.accept_token;
         remapped_state.priority = state.priority;
         remapped_state.possible = state.possible.clone();
@@ -201,7 +211,7 @@ fn minimize(dfa: DynamicDfa, token_count: usize) -> Result<DynamicDfa, String> {
         let transitions = transitions_for(&dfa, idx as u16);
         for trans in transitions {
             let target_block = block_ids[trans.target as usize];
-            new_transitions.push(DynamicDfaTransition {
+            new_transitions.push(HostDfaTransition {
                 start: trans.start,
                 end: trans.end,
                 target: target_block as u16,
@@ -209,22 +219,27 @@ fn minimize(dfa: DynamicDfa, token_count: usize) -> Result<DynamicDfa, String> {
         }
         remapped_state.transition_len =
             (new_transitions.len() as u32) - remapped_state.first_transition;
+        remapped_state.dense_offset = state.dense_offset;
+        remapped_state.dense_len = state.dense_len;
+        remapped_state.dense_start = state.dense_start;
         new_states.push(remapped_state);
     }
 
-    let start_block = block_ids[0];
-
-    let mut result = DynamicDfa {
-        start: start_block as u16,
+    HostCompiledDfa {
+        start: block_ids[dfa.start as usize] as u16,
         states: new_states,
         transitions: new_transitions,
-        dense: Vec::new(),
-    };
-    populate_dense_tables(&mut result);
-    Ok(result)
+        dense: dfa.dense,
+    }
 }
 
-fn populate_dense_tables(dfa: &mut DynamicDfa) {
+struct SignatureEntry {
+    block: usize,
+    signature: Vec<(u32, u16)>,
+    new_block: usize,
+}
+
+fn populate_dense_tables(dfa: &mut HostCompiledDfa) {
     dfa.dense.clear();
     for state in dfa.states.iter_mut() {
         state.dense_offset = 0;
@@ -284,8 +299,8 @@ fn populate_dense_tables(dfa: &mut DynamicDfa) {
 }
 
 fn build_transition_signature(
-    state: &DynamicDfaState,
-    transitions: &[DynamicDfaTransition],
+    state: &HostDfaState,
+    transitions: &[HostDfaTransition],
     block_ids: &[usize],
 ) -> Vec<(u32, u16)> {
     let start = state.first_transition as usize;
@@ -299,7 +314,7 @@ fn build_transition_signature(
     signature
 }
 
-fn transitions_for<'a>(dfa: &'a DynamicDfa, state: u16) -> &'a [DynamicDfaTransition] {
+fn transitions_for<'a>(dfa: &'a HostCompiledDfa, state: u16) -> &'a [HostDfaTransition] {
     let entry = &dfa.states[state as usize];
     let start = entry.first_transition as usize;
     let end = start + entry.transition_len as usize;
@@ -417,7 +432,6 @@ fn compute_reachable_tokens(nfa: &DynamicNfa, token_count: usize) -> Vec<Bitset>
         }
     }
 
-    // propagate backwards using transitions and epsilons
     let mut changed = true;
     while changed {
         changed = false;
@@ -440,4 +454,13 @@ fn compute_reachable_tokens(nfa: &DynamicNfa, token_count: usize) -> Vec<Bitset>
     }
 
     reachability
+}
+
+fn find_state(index: &[(Vec<bool>, u16)], key: &[bool]) -> Option<u16> {
+    for (stored, value) in index {
+        if stored.as_slice() == key {
+            return Some(*value);
+        }
+    }
+    None
 }
