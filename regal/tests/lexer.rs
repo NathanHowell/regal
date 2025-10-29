@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use regal::{CharCategory, ClassAtom, Pattern, PatternNode, TokenSpec, compile};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]

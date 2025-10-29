@@ -29,6 +29,7 @@ impl<const N: usize> Bitset<N> {
         if bit < N { self.data[bit] } else { false }
     }
 
+    #[cfg_attr(not(feature = "alloc"), allow(dead_code))]
     pub(crate) const fn insert(&mut self, bit: usize) {
         if bit < N {
             self.data[bit] = true;

@@ -7,7 +7,11 @@ rust-version.workspace = true
 
 [dependencies]
 heapless.workspace = true
-regal-compiler = { path = "../regal-compiler" }
+regal-compiler = { path = "../regal-compiler", optional = true }
+
+[features]
+default = []
+alloc = ["dep:regal-compiler"]
 
 [dev-dependencies]
 regal-macros = { path = "../regal-macros" }

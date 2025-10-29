@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use regal::{
     CharCategory, ClassAtom, CompiledLexer, CursorView, IncrementalError, Pattern, PatternNode,
     TextEdit, TokenCache, TokenRecord, TokenSpec, compile,

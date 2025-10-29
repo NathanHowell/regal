@@ -14,6 +14,10 @@ regal-macros = { git = "https://github.com/NathanHowell/regal", tag = "v0.1.0", 
 
 The library is `#![no_std]` by default and requires no allocator. Patterns are compiled on the host via the proc macro, and the generated tables can be embedded in firmware or other constrained environments.
 
+## Cargo Features
+
+- `alloc` *(off by default)* – Enables the runtime `regal::compile` API by pulling in the host-side compiler crate (`regal-compiler`). This requires the `alloc` crate and a global allocator, so firmware builds targeting bare-metal environments should leave the feature disabled. Procedural macros continue to emit precompiled tables without needing the feature.
+
 ## Defining a Lexer with `#[derive(RegalLexer)]`
 
 Create an enum whose variants correspond to token kinds. Attach `#[token]` or `#[regex]` attributes to supply literal or regular-expression patterns. Optional `priority = …` and `skip` flags control disambiguation and trivia handling, similar to Logos.
@@ -109,7 +113,7 @@ The derive macro infers the necessary sizes automatically (including dense works
 The repository includes `tests/macro_basic.rs`, which demonstrates the derive macro, incremental cache, and deterministic rebuilds. Run the suite with:
 
 ```bash
-CARGO_NET_OFFLINE=true cargo test
+CARGO_NET_OFFLINE=true cargo test --workspace --all-features
 ```
 
 This command works in offline/sandboxed environments and exercises both the macro crate and the incremental APIs.
