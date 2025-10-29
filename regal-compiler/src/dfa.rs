@@ -197,7 +197,7 @@ fn minimize(dfa: HostCompiledDfa, token_count: usize) -> HostCompiledDfa {
     let mut new_states = Vec::new();
     let mut new_transitions = Vec::new();
 
-    for (_block, &maybe_idx) in representative.iter().enumerate() {
+    for &maybe_idx in representative.iter() {
         let idx = match maybe_idx {
             Some(i) => i,
             None => continue,
@@ -314,7 +314,7 @@ fn build_transition_signature(
     signature
 }
 
-fn transitions_for<'a>(dfa: &'a HostCompiledDfa, state: u16) -> &'a [HostDfaTransition] {
+fn transitions_for(dfa: &HostCompiledDfa, state: u16) -> &[HostDfaTransition] {
     let entry = &dfa.states[state as usize];
     let start = entry.first_transition as usize;
     let end = start + entry.transition_len as usize;

@@ -68,10 +68,8 @@ fn expand_regal_lexer(input: DeriveInput) -> syn::Result<proc_macro2::TokenStrea
                         ));
                     }
                 }
-            } else if attr.path().is_ident("skip") {
-                if matches!(attr.meta, Meta::Path(_)) {
-                    variant_skip = true;
-                }
+            } else if attr.path().is_ident("skip") && matches!(attr.meta, Meta::Path(_)) {
+                variant_skip = true;
             }
         }
 

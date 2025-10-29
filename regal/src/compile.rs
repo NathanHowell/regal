@@ -295,7 +295,7 @@ fn push_unique<const CAP: usize>(
     set: &mut HeaplessVec<u32, CAP>,
     value: u32,
 ) -> Result<(), DfaError> {
-    if set.iter().any(|&existing| existing == value) {
+    if set.contains(&value) {
         return Ok(());
     }
     set.push(value).map_err(|_| DfaError::WorkspaceOverflow)
@@ -317,14 +317,17 @@ fn pack_host_dfa<
     }
     let mut states = [DfaState::default(); MAX_STATES];
     for (idx, state) in dfa.states.iter().enumerate() {
-        let mut converted = DfaState::default();
-        converted.first_transition = state.first_transition;
-        converted.transition_len = state.transition_len;
-        converted.accept_token = state.accept_token;
-        converted.priority = state.priority;
-        converted.possible = bitset_from_possible::<MAX_TOKENS>(&state.possible)?;
-
-        states[idx] = converted;
+        let possible = bitset_from_possible::<MAX_TOKENS>(&state.possible)?;
+        states[idx] = DfaState {
+            first_transition: state.first_transition,
+            transition_len: state.transition_len,
+            accept_token: state.accept_token,
+            priority: state.priority,
+            possible,
+            dense_offset: 0,
+            dense_len: 0,
+            dense_start: 0,
+        };
     }
 
     let mut transitions = [DfaTransition::default(); MAX_TRANSITIONS];

@@ -178,6 +178,15 @@ where
     }
 }
 
+impl<T, const MAX_TOKENS: usize> Default for TokenCache<T, MAX_TOKENS>
+where
+    T: Copy + Default,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct CursorView<'cache, T> {
     pub preceding: &'cache [TokenRecord<T>],

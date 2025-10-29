@@ -62,8 +62,7 @@ impl<const N: usize> fmt::Debug for Bitset<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
         write!(f, "{{")?;
-        let mut iter = self.iter();
-        while let Some(bit) = iter.next() {
+        for bit in self.iter() {
             if !first {
                 write!(f, ", ")?;
             }
