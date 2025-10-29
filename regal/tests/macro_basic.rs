@@ -22,6 +22,13 @@ fn derive_macro_produces_static_lexer() {
     let partial = cache.rebuild(compiled, source).expect("rebuild to succeed");
     assert!(partial.is_none(), "no partial token for complete input");
 
+    assert_eq!(TOKEN_KIND_TOKEN_COUNT, 4);
+    assert!(TOKEN_KIND_DFA_STATE_COUNT > 0);
+    assert!(TOKEN_KIND_DFA_TRANSITION_COUNT > 0);
+
+    let _: &TokenKindCompiledLexer = TokenKind::lexer();
+    let _runtime: TokenKindLexer<'_> = TokenKind::lexer().lexer();
+
     let collected: Vec<(TokenKind, &str)> = cache
         .tokens()
         .iter()

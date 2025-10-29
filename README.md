@@ -43,11 +43,14 @@ enum TokenKind {
 }
 
 fn main() {
-    // Compiled tables are emitted as a &'static CompiledLexer.
-    let compiled = TokenKind::lexer();
+    // The derive macro emits size constants and type aliases alongside the enum.
+    const CACHE_CAP: usize = TOKEN_KIND_TOKEN_COUNT * 4;
+
+    // Compiled tables are emitted as a &'static TokenKindCompiledLexer.
+    let compiled: &TokenKindCompiledLexer = TokenKind::lexer();
 
     // TokenCache drives incremental lexing with minimal re-scans.
-    let mut cache: TokenCache<TokenKind, 32> = TokenCache::new();
+    let mut cache: TokenCache<TokenKind, CACHE_CAP> = TokenCache::new();
     cache.rebuild(compiled, "let answer = 42").unwrap();
 
     // Tokens are deterministic and trivia can be skipped via the flag above.
@@ -107,6 +110,11 @@ Patterns are compiled into const-generic tables. When using the runtime `compile
 - `MAX_DENSE`: total slots available for per-state dense transition rows (only consumed by states whose alphabets are small and mostly populated; others continue to use range scans).
 
 The derive macro infers the necessary sizes automatically (including dense workspace) and emits packed arrays that can be embedded in ROM.
+
+For enums tagged with `#[derive(RegalLexer)]`, the macro also produces:
+
+- `FOO_TOKEN_COUNT`, `FOO_DFA_STATE_COUNT`, `FOO_DFA_TRANSITION_COUNT`, `FOO_DFA_DENSE_COUNT`, `FOO_DFA_CLASS_COUNT` constants sized to the compiled DFA, where `FOO` is the enum name in SCREAMING_SNAKE case.
+- Type aliases `FooCompiledLexer`, `FooPackedDfa`, and `FooLexer<'a>` so you can refer to the exact table shapes in signatures or const contexts without repeating the numbers manually.
 
 ## Testing
 

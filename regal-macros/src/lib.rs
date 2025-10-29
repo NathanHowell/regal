@@ -261,11 +261,78 @@ fn emit_codegen(
     tokens: Vec<TokenMeta>,
     dfa: HostCompiledDfa,
 ) -> syn::Result<proc_macro2::TokenStream> {
+    fn screaming_snake(ident: &syn::Ident) -> String {
+        let name = ident.to_string();
+        if name.is_empty() {
+            return name;
+        }
+
+        let chars: std::vec::Vec<char> = name.chars().collect();
+        let mut result = String::with_capacity(chars.len() * 2);
+
+        for (idx, ch) in chars.iter().enumerate() {
+            let is_alnum = ch.is_ascii_alphanumeric();
+            if !is_alnum {
+                if !result.ends_with('_') && !result.is_empty() {
+                    result.push('_');
+                }
+                continue;
+            }
+
+            let is_upper = ch.is_ascii_uppercase();
+            let is_lower = ch.is_ascii_lowercase();
+            let prev = if idx > 0 { Some(chars[idx - 1]) } else { None };
+            let next = chars.get(idx + 1).copied();
+
+            let mut need_separator = false;
+            if let Some(prev_ch) = prev {
+                if is_upper {
+                    let prev_lower_or_digit =
+                        prev_ch.is_ascii_lowercase() || prev_ch.is_ascii_digit();
+                    let next_is_lower = next.map(|c| c.is_ascii_lowercase()).unwrap_or(false);
+                    let prev_is_upper = prev_ch.is_ascii_uppercase();
+                    need_separator = prev_lower_or_digit || (prev_is_upper && next_is_lower);
+                } else if is_lower {
+                    if prev_ch.is_ascii_digit() {
+                        need_separator = true;
+                    }
+                } else if ch.is_ascii_digit() {
+                    if prev_ch.is_ascii_alphabetic() {
+                        need_separator = true;
+                    }
+                }
+            }
+
+            if need_separator && !result.is_empty() && !result.ends_with('_') {
+                result.push('_');
+            }
+
+            if is_upper {
+                result.push(*ch);
+            } else {
+                result.push(ch.to_ascii_uppercase());
+            }
+        }
+
+        if result.is_empty() { name } else { result }
+    }
+
     let token_count = specs.len();
     let states_len = dfa.states.len();
     let transitions_len = dfa.transitions.len();
     let dense_slots = dfa.dense.len();
     let class_slots = dfa.classes.len();
+
+    let screaming = screaming_snake(&enum_ident);
+    let token_const = format_ident!("{}_TOKEN_COUNT", screaming);
+    let state_const = format_ident!("{}_DFA_STATE_COUNT", screaming);
+    let trans_const = format_ident!("{}_DFA_TRANSITION_COUNT", screaming);
+    let dense_const = format_ident!("{}_DFA_DENSE_COUNT", screaming);
+    let class_const = format_ident!("{}_DFA_CLASS_COUNT", screaming);
+
+    let compiled_alias = format_ident!("{}CompiledLexer", enum_ident);
+    let packed_alias = format_ident!("{}PackedDfa", enum_ident);
+    let lexer_alias = format_ident!("{}Lexer", enum_ident);
 
     let enum_path = specs
         .iter()
@@ -352,6 +419,39 @@ fn emit_codegen(
     let start_state = dfa.start;
 
     let expanded = quote! {
+        pub const #token_const: usize = #token_count;
+        pub const #state_const: usize = #states_len;
+        pub const #trans_const: usize = #transitions_len;
+        pub const #dense_const: usize = #dense_slots;
+        pub const #class_const: usize = #class_slots;
+
+        pub type #packed_alias = regal::PackedDfa<
+            #states_len,
+            #transitions_len,
+            #token_count,
+            #dense_slots,
+            #class_slots
+        >;
+
+        pub type #compiled_alias = regal::CompiledLexer<
+            #enum_ident,
+            #token_count,
+            #states_len,
+            #transitions_len,
+            #dense_slots,
+            #class_slots
+        >;
+
+        pub type #lexer_alias<'__regal_source> = regal::Lexer<
+            '__regal_source,
+            #enum_ident,
+            #token_count,
+            #states_len,
+            #transitions_len,
+            #dense_slots,
+            #class_slots
+        >;
+
         pub static #lexer_ident: regal::CompiledLexer<
             #enum_ident,
             #token_count,
