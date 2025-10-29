@@ -85,9 +85,10 @@ where
         const STATES: usize,
         const TRANSITIONS: usize,
         const DENSE: usize,
+        const CLASSES: usize,
     >(
         &mut self,
-        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
+        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>,
         input: &'a str,
     ) -> Result<Option<PartialToken<'a, T, TOKENS>>, IncrementalError> {
         self.tokens.clear();
@@ -104,9 +105,10 @@ where
         const STATES: usize,
         const TRANSITIONS: usize,
         const DENSE: usize,
+        const CLASSES: usize,
     >(
         &mut self,
-        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
+        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>,
         input: &'a str,
         edit: TextEdit,
     ) -> Result<Option<PartialToken<'a, T, TOKENS>>, IncrementalError> {
@@ -213,9 +215,10 @@ fn run_lexer<
     const TRANSITIONS: usize,
     const MAX_TOKENS: usize,
     const DENSE: usize,
+    const CLASSES: usize,
 >(
-    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
-    lexer: &mut Lexer<'a, T, TOKENS, STATES, TRANSITIONS, DENSE>,
+    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>,
+    lexer: &mut Lexer<'a, T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>,
     input: &'a str,
     mut offset: usize,
     records: &mut Vec<TokenRecord<T>, MAX_TOKENS>,
@@ -333,8 +336,9 @@ fn build_partial<
     const STATES: usize,
     const TRANSITIONS: usize,
     const DENSE: usize,
+    const CLASSES: usize,
 >(
-    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
+    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>,
     fragment: &'a str,
     start: usize,
     entry: Checkpoint,

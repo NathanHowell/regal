@@ -62,10 +62,11 @@ pub struct Lexer<
     const STATES: usize,
     const TRANSITIONS: usize,
     const DENSE: usize,
+    const CLASSES: usize,
 > where
     T: Copy + Default,
 {
-    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>,
+    compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>,
     state: u16,
     progress_len: usize,
     last_accept: Option<Accept>,
@@ -111,12 +112,21 @@ impl Checkpoint {
     }
 }
 
-impl<'a, T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize, const DENSE: usize>
-    Lexer<'a, T, TOKENS, STATES, TRANSITIONS, DENSE>
+impl<
+    'a,
+    T,
+    const TOKENS: usize,
+    const STATES: usize,
+    const TRANSITIONS: usize,
+    const DENSE: usize,
+    const CLASSES: usize,
+> Lexer<'a, T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>
 where
     T: Copy + Default,
 {
-    pub fn new(compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>) -> Self {
+    pub fn new(
+        compiled: &'a CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>,
+    ) -> Self {
         let start = Checkpoint::start(compiled.dfa.start_state());
         Self {
             compiled,
@@ -220,13 +230,14 @@ where
     }
 
     fn next_state(&self, state: u16, ch: u32) -> Option<u16> {
-        if let Some(target) = self.compiled.dfa.dense_target(state, ch) {
+        let class = self.compiled.dfa.class_for(ch)?;
+        if let Some(target) = self.compiled.dfa.dense_target(state, class as u32) {
             return Some(target);
         }
 
         let transitions = self.compiled.dfa.transitions_for(state);
         for transition in transitions {
-            if transition.start <= ch && ch <= transition.end {
+            if transition.start <= class as u32 && class as u32 <= transition.end {
                 return Some(transition.target);
             }
         }

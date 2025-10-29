@@ -19,6 +19,7 @@ const DFA_STATES: usize = 32;
 const DFA_TRANSITIONS: usize = 64;
 const MAX_BOUNDARIES: usize = 128;
 const MAX_DENSE: usize = 128;
+const MAX_CLASSES: usize = 128;
 
 const WS_CLASS: [ClassAtom; 1] = [ClassAtom::Category(CharCategory::Whitespace)];
 const WS_NODE: PatternNode<'static> = PatternNode::Class(&WS_CLASS);
@@ -49,7 +50,8 @@ const IDENT_PATTERN: Pattern<'static> = Pattern::new(&IDENT_REPEAT_NODE);
 
 const EQ_PATTERN: Pattern<'static> = Pattern::new(&PatternNode::Literal(b"="));
 
-fn compiled() -> regal::CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE> {
+fn compiled()
+-> regal::CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE, MAX_CLASSES> {
     static SPECS: [TokenSpec<'static, Tok>; 3] = [
         TokenSpec {
             pattern: WS_PATTERN,
@@ -81,6 +83,7 @@ fn compiled() -> regal::CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, 
         DFA_TRANSITIONS,
         MAX_BOUNDARIES,
         MAX_DENSE,
+        MAX_CLASSES,
     >(&SPECS)
     .expect("lexer compilation")
 }

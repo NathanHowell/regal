@@ -1,5 +1,4 @@
-use crate::dfa::DfaError;
-use crate::dfa::PackedDfa;
+use crate::dfa::{DfaError, PackedDfa};
 use crate::lexer::TokenInfo;
 use crate::nfa::NfaError;
 use crate::pattern::Pattern;
@@ -26,14 +25,21 @@ pub struct CompiledLexer<
     const STATES: usize,
     const TRANSITIONS: usize,
     const DENSE: usize,
+    const CLASSES: usize,
 > {
-    pub(crate) dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE>,
+    pub(crate) dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE, CLASSES>,
     pub(crate) token_info: [TokenInfo<T>; TOKENS],
     _marker: PhantomData<T>,
 }
 
-impl<T, const TOKENS: usize, const STATES: usize, const TRANSITIONS: usize, const DENSE: usize>
-    CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE>
+impl<
+    T,
+    const TOKENS: usize,
+    const STATES: usize,
+    const TRANSITIONS: usize,
+    const DENSE: usize,
+    const CLASSES: usize,
+> CompiledLexer<T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES>
 where
     T: Copy + Default,
 {
@@ -47,12 +53,12 @@ where
         self.token_info.get(id as usize)
     }
 
-    pub fn lexer(&self) -> crate::lexer::Lexer<'_, T, TOKENS, STATES, TRANSITIONS, DENSE> {
+    pub fn lexer(&self) -> crate::lexer::Lexer<'_, T, TOKENS, STATES, TRANSITIONS, DENSE, CLASSES> {
         crate::lexer::Lexer::new(self)
     }
 
     pub const fn from_parts(
-        dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE>,
+        dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE, CLASSES>,
         token_info: [TokenInfo<T>; TOKENS],
     ) -> Self {
         Self {
@@ -79,6 +85,8 @@ where
 ///   transition bound.
 /// * `MAX_DENSE` – total capacity of dense transition slots generated for
 ///   states that operate on compact alphabets.
+/// * `MAX_CLASSES` – maximum number of byte-class ranges retained for mapping
+///   input characters to their DFA equivalence class.
 ///
 /// The compilation itself happens on the host at build time when invoked from a
 /// procedural macro or a `build.rs` script. The resulting [`CompiledLexer`] is
@@ -109,12 +117,12 @@ mod host {
     extern crate alloc;
 
     use super::*;
+    use crate::dfa::{ByteClass, DfaState, DfaTransition, INVALID_TARGET};
+    use crate::pattern::{CharCategory, ClassAtom as PatternClassAtom, PatternNode};
     use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;
     use heapless::Vec as HeaplessVec;
-    use crate::dfa::{DfaState, DfaTransition, INVALID_TARGET};
-    use crate::pattern::{CharCategory, ClassAtom as PatternClassAtom, PatternNode};
     use regal_compiler::{
         ClassAtom as HostClassAtom, HostCompiledDfa, NfaError as HostNfaError,
         NfaSpec as HostNfaSpec, PatternExpr as HostPatternExpr, build_dfa as host_build_dfa,
@@ -132,9 +140,13 @@ mod host {
         const DFA_TRANSITIONS: usize,
         const MAX_BOUNDARIES: usize,
         const MAX_DENSE: usize,
+        const MAX_CLASSES: usize,
     >(
         specs: &[TokenSpec<'a, T>],
-    ) -> Result<CompiledLexer<T, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE>, CompileError>
+    ) -> Result<
+        CompiledLexer<T, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE, MAX_CLASSES>,
+        CompileError,
+    >
     where
         T: Copy + Default,
     {
@@ -182,8 +194,9 @@ mod host {
         }
         validate_boundaries::<MAX_BOUNDARIES>(&dfa).map_err(CompileError::Dfa)?;
 
-        let packed = pack_host_dfa::<DFA_STATES, DFA_TRANSITIONS, TOKENS, MAX_DENSE>(&dfa)
-            .map_err(CompileError::Dfa)?;
+        let packed =
+            pack_host_dfa::<DFA_STATES, DFA_TRANSITIONS, TOKENS, MAX_DENSE, MAX_CLASSES>(&dfa)
+                .map_err(CompileError::Dfa)?;
 
         Ok(CompiledLexer {
             dfa: packed,
@@ -197,10 +210,12 @@ mod host {
             PatternNode::Empty => HostPatternExpr::Empty,
             PatternNode::Literal(bytes) => HostPatternExpr::Literal(bytes.to_vec()),
             PatternNode::Char(ch) => HostPatternExpr::Class(vec![HostClassAtom::Char(*ch)]),
-            PatternNode::Range { start, end } => HostPatternExpr::Class(vec![HostClassAtom::Range {
-                start: *start,
-                end: *end,
-            }]),
+            PatternNode::Range { start, end } => {
+                HostPatternExpr::Class(vec![HostClassAtom::Range {
+                    start: *start,
+                    end: *end,
+                }])
+            }
             PatternNode::Class(items) => HostPatternExpr::Class(convert_class_atoms(items)),
             PatternNode::Sequence(parts) => {
                 let mut seq = Vec::with_capacity(parts.len());
@@ -334,9 +349,11 @@ mod host {
         const MAX_TRANSITIONS: usize,
         const MAX_TOKENS: usize,
         const MAX_DENSE: usize,
+        const MAX_CLASSES: usize,
     >(
         dfa: &HostCompiledDfa,
-    ) -> Result<PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE>, DfaError> {
+    ) -> Result<PackedDfa<MAX_STATES, MAX_TRANSITIONS, MAX_TOKENS, MAX_DENSE, MAX_CLASSES>, DfaError>
+    {
         if dfa.states.len() > MAX_STATES {
             return Err(DfaError::StateOverflow);
         }
@@ -352,9 +369,9 @@ mod host {
                 accept_token: state.accept_token,
                 priority: state.priority,
                 possible,
-                dense_offset: 0,
-                dense_len: 0,
-                dense_start: 0,
+                dense_offset: state.dense_offset,
+                dense_len: state.dense_len,
+                dense_start: state.dense_start,
             };
         }
 
@@ -367,14 +384,36 @@ mod host {
             };
         }
 
+        if dfa.dense.len() > MAX_DENSE {
+            return Err(DfaError::DenseOverflow);
+        }
+        let mut dense = [INVALID_TARGET; MAX_DENSE];
+        for (idx, value) in dfa.dense.iter().enumerate() {
+            dense[idx] = *value;
+        }
+
+        if dfa.classes.len() > MAX_CLASSES {
+            return Err(DfaError::ClassOverflow);
+        }
+        let mut classes = [ByteClass::default(); MAX_CLASSES];
+        for (idx, class) in dfa.classes.iter().enumerate() {
+            classes[idx] = ByteClass {
+                start: class.start,
+                end: class.end,
+                class: class.class,
+            };
+        }
+
         Ok(PackedDfa::from_parts(
             dfa.start,
             states,
             dfa.states.len(),
             transitions,
             dfa.transitions.len(),
-            [INVALID_TARGET; MAX_DENSE],
-            0,
+            dense,
+            dfa.dense.len(),
+            classes,
+            dfa.classes.len(),
         ))
     }
 }

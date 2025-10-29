@@ -18,6 +18,7 @@ const DFA_STATES: usize = 64;
 const DFA_TRANSITIONS: usize = 128;
 const MAX_BOUNDARIES: usize = 256;
 const MAX_DENSE: usize = 256;
+const MAX_CLASSES: usize = 256;
 
 const ALPHA_CLASS: [ClassAtom; 1] = [ClassAtom::Category(CharCategory::Alphabetic)];
 const ALPHA_NODE: PatternNode<'static> = PatternNode::Class(&ALPHA_CLASS);
@@ -41,7 +42,8 @@ const MIX_SEQ: [Pattern<'static>; 2] = [ALPHA_PATTERN, DIGIT_PATTERN];
 const MIX_NODE: PatternNode<'static> = PatternNode::Sequence(&MIX_SEQ);
 const MIX_PATTERN: Pattern<'static> = Pattern::new(&MIX_NODE);
 
-fn compile_test_lexer() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE> {
+fn compile_test_lexer()
+-> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE, MAX_CLASSES> {
     let specs = [
         TokenSpec {
             pattern: ALPHA_PATTERN,
@@ -73,6 +75,7 @@ fn compile_test_lexer() -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITION
         DFA_TRANSITIONS,
         MAX_BOUNDARIES,
         MAX_DENSE,
+        MAX_CLASSES,
     >(&specs)
     .expect("test lexer should compile")
 }
@@ -88,7 +91,7 @@ fn compile_builds_expected_tokens() {
 }
 
 fn assert_match(
-    lexer: &mut regal::Lexer<'_, Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE>,
+    lexer: &mut regal::Lexer<'_, Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE, MAX_CLASSES>,
     input: &str,
     expected_token: Tok,
     expected_len: usize,
@@ -125,7 +128,7 @@ fn compile_errors_on_too_many_tokens() {
         },
     ];
 
-    match compile::<Tok, 1, 8, 8, 8, 8, 8, 16, 16>(&specs) {
+    match compile::<Tok, 1, 8, 8, 8, 8, 8, 16, 16, 16>(&specs) {
         Err(regal::CompileError::TooManyTokens) => {}
         Err(other) => panic!("unexpected error: {:?}", other),
         Ok(_) => panic!("expected too many tokens error"),
@@ -142,7 +145,7 @@ fn compile_propagates_nfa_overflow() {
         skip: false,
     };
 
-    match compile::<Tok, 1, 4, 4, 4, 8, 8, 16, 16>(&[spec]) {
+    match compile::<Tok, 1, 4, 4, 4, 8, 8, 16, 16, 16>(&[spec]) {
         Err(regal::CompileError::Nfa(regal::NfaError::StateOverflow)) => {}
         Err(other) => panic!("unexpected error: {:?}", other),
         Ok(_) => panic!("expected NFA overflow"),
@@ -164,9 +167,51 @@ fn compile_propagates_dfa_overflow() {
         skip: false,
     };
 
-    match compile::<Tok, 1, 16, 16, 16, 1, 2, 8, 8>(&[spec]) {
+    match compile::<Tok, 1, 16, 16, 16, 1, 2, 8, 8, 8>(&[spec]) {
         Err(regal::CompileError::Dfa(regal::DfaError::StateOverflow)) => {}
         Err(other) => panic!("unexpected error: {:?}", other),
         Ok(_) => panic!("expected DFA overflow"),
     }
+}
+
+#[test]
+fn byte_classes_compact_alphabet() {
+    let compiled = compile_test_lexer();
+    let class_count = compiled.dfa.class_count();
+    assert!(
+        class_count <= 32,
+        "expected byte classes to compact alphabet, got {}",
+        class_count
+    );
+
+    let classes = compiled.dfa.classes();
+    let class_for = |ch: char| -> u16 {
+        let code = ch as u32;
+        classes
+            .iter()
+            .find(|entry| entry.start <= code && code <= entry.end)
+            .map(|entry| entry.class)
+            .expect("class entry for character")
+    };
+
+    assert_eq!(class_for('a'), class_for('b'));
+    assert_eq!(class_for('0'), class_for('9'));
+    assert_ne!(class_for('a'), class_for('0'));
+}
+
+#[test]
+fn dense_rows_populate_for_dense_states() {
+    let compiled = compile_test_lexer();
+    let mut dense_states = 0usize;
+    for state_idx in 0..compiled.dfa.states_len() {
+        if let Some(state) = compiled.dfa.state(state_idx as u16) {
+            if state.dense_len > 0 {
+                dense_states += 1;
+            }
+        }
+    }
+    assert!(
+        dense_states > 0,
+        "expected at least one state with dense transition table"
+    );
 }

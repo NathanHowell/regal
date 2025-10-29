@@ -6,6 +6,16 @@ use core::cmp;
 
 const INVALID_TARGET: u16 = u16::MAX;
 const DENSE_SPAN_LIMIT: u32 = 128;
+const DENSE_MIN_COVERAGE: u32 = 4;
+const DENSE_RATIO_NUMERATOR: u32 = 3;
+const DENSE_RATIO_DENOMINATOR: u32 = 4;
+
+#[derive(Clone)]
+pub struct ByteClassRange {
+    pub start: u32,
+    pub end: u32,
+    pub class: u16,
+}
 
 #[derive(Clone)]
 pub struct HostDfaState {
@@ -47,11 +57,22 @@ pub struct HostCompiledDfa {
     pub transitions: Vec<HostDfaTransition>,
     pub start: u16,
     pub dense: Vec<u16>,
+    pub classes: Vec<ByteClassRange>,
+    pub class_count: u16,
+}
+
+#[derive(Clone, Copy)]
+struct Segment {
+    start: u32,
+    end: u32,
 }
 
 pub fn build_dfa(nfa: &DynamicNfa, token_count: usize) -> HostCompiledDfa {
     let dfa = determinize(nfa, token_count);
-    minimize(dfa, token_count)
+    let mut minimized = minimize(dfa, token_count);
+    apply_byte_classes(&mut minimized);
+    populate_dense_tables(&mut minimized);
+    minimized
 }
 
 fn determinize(nfa: &DynamicNfa, token_count: usize) -> HostCompiledDfa {
@@ -124,14 +145,14 @@ fn determinize(nfa: &DynamicNfa, token_count: usize) -> HostCompiledDfa {
         index += 1;
     }
 
-    let mut dfa = HostCompiledDfa {
+    HostCompiledDfa {
         states: dfa_states,
         transitions: dfa_transitions,
         start: 0,
         dense: Vec::new(),
-    };
-    populate_dense_tables(&mut dfa);
-    dfa
+        classes: Vec::new(),
+        class_count: 0,
+    }
 }
 
 fn minimize(dfa: HostCompiledDfa, token_count: usize) -> HostCompiledDfa {
@@ -219,9 +240,9 @@ fn minimize(dfa: HostCompiledDfa, token_count: usize) -> HostCompiledDfa {
         }
         remapped_state.transition_len =
             (new_transitions.len() as u32) - remapped_state.first_transition;
-        remapped_state.dense_offset = state.dense_offset;
-        remapped_state.dense_len = state.dense_len;
-        remapped_state.dense_start = state.dense_start;
+        remapped_state.dense_offset = 0;
+        remapped_state.dense_len = 0;
+        remapped_state.dense_start = 0;
         new_states.push(remapped_state);
     }
 
@@ -229,7 +250,9 @@ fn minimize(dfa: HostCompiledDfa, token_count: usize) -> HostCompiledDfa {
         start: block_ids[dfa.start as usize] as u16,
         states: new_states,
         transitions: new_transitions,
-        dense: dfa.dense,
+        dense: Vec::new(),
+        classes: Vec::new(),
+        class_count: 0,
     }
 }
 
@@ -237,6 +260,187 @@ struct SignatureEntry {
     block: usize,
     signature: Vec<(u32, u16)>,
     new_block: usize,
+}
+
+fn apply_byte_classes(dfa: &mut HostCompiledDfa) {
+    let state_count = dfa.states.len();
+    if state_count == 0 {
+        dfa.classes.clear();
+        dfa.class_count = 0;
+        dfa.transitions.clear();
+        return;
+    }
+
+    let mut boundaries: Vec<u64> = Vec::new();
+    boundaries.push(0);
+    boundaries.push((u32::MAX as u64).saturating_add(1));
+
+    for state in &dfa.states {
+        let start = state.first_transition as usize;
+        let end = start + state.transition_len as usize;
+        for trans in &dfa.transitions[start..end] {
+            boundaries.push(trans.start as u64);
+            let end_plus = (trans.end as u64).saturating_add(1);
+            boundaries.push(end_plus);
+        }
+    }
+
+    boundaries.sort_unstable();
+    boundaries.dedup();
+
+    let mut segments = Vec::new();
+    for window in boundaries.windows(2) {
+        let seg_start = window[0];
+        let seg_end = window[1];
+        if seg_start >= seg_end {
+            continue;
+        }
+        let start = seg_start as u32;
+        let end = if seg_end == (u32::MAX as u64).saturating_add(1) {
+            u32::MAX
+        } else {
+            (seg_end as u32).saturating_sub(1)
+        };
+        segments.push(Segment { start, end });
+    }
+
+    if segments.is_empty() {
+        segments.push(Segment {
+            start: 0,
+            end: u32::MAX,
+        });
+    }
+
+    let mut segment_signatures: Vec<Vec<u16>> =
+        vec![vec![INVALID_TARGET; state_count]; segments.len()];
+
+    for (state_index, state) in dfa.states.iter().enumerate() {
+        let start = state.first_transition as usize;
+        let end = start + state.transition_len as usize;
+        for trans in &dfa.transitions[start..end] {
+            let begin_idx = find_segment_index(&segments, trans.start);
+            let end_idx = find_segment_index(&segments, trans.end);
+            for seg in begin_idx..=end_idx {
+                segment_signatures[seg][state_index] = trans.target;
+            }
+        }
+    }
+
+    let mut class_signatures: Vec<Vec<u16>> = Vec::new();
+    let mut segment_classes: Vec<u16> = Vec::with_capacity(segments.len());
+
+    for signature in &segment_signatures {
+        if let Some((idx, _)) = class_signatures
+            .iter()
+            .enumerate()
+            .find(|(_, existing)| *existing == signature)
+        {
+            segment_classes.push(idx as u16);
+        } else {
+            let new_id = class_signatures.len() as u16;
+            class_signatures.push(signature.clone());
+            segment_classes.push(new_id);
+        }
+    }
+
+    let mut classes = Vec::new();
+    if !segments.is_empty() {
+        let mut current_class = segment_classes[0];
+        let mut current_start = segments[0].start;
+        let mut current_end = segments[0].end;
+
+        for (idx, seg) in segments.iter().enumerate().skip(1) {
+            let class_id = segment_classes[idx];
+            if class_id == current_class && seg.start == current_end.saturating_add(1) {
+                current_end = seg.end;
+            } else {
+                classes.push(ByteClassRange {
+                    start: current_start,
+                    end: current_end,
+                    class: current_class,
+                });
+                current_class = class_id;
+                current_start = seg.start;
+                current_end = seg.end;
+            }
+        }
+
+        classes.push(ByteClassRange {
+            start: current_start,
+            end: current_end,
+            class: current_class,
+        });
+    }
+
+    let mut new_transitions = Vec::new();
+
+    for (state_index, state) in dfa.states.iter_mut().enumerate() {
+        state.first_transition = new_transitions.len() as u32;
+        let mut range_start: Option<u32> = None;
+        let mut current_target = INVALID_TARGET;
+
+        for class_index in 0..class_signatures.len() {
+            let class_target = class_signatures[class_index][state_index];
+            match (range_start, class_target == INVALID_TARGET) {
+                (None, true) => {}
+                (None, false) => {
+                    range_start = Some(class_index as u32);
+                    current_target = class_target;
+                }
+                (Some(start), true) => {
+                    new_transitions.push(HostDfaTransition {
+                        start,
+                        end: (class_index as u32).saturating_sub(1),
+                        target: current_target,
+                    });
+                    range_start = None;
+                    current_target = INVALID_TARGET;
+                }
+                (Some(start), false) if class_target != current_target => {
+                    new_transitions.push(HostDfaTransition {
+                        start,
+                        end: (class_index as u32).saturating_sub(1),
+                        target: current_target,
+                    });
+                    range_start = Some(class_index as u32);
+                    current_target = class_target;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(start) = range_start {
+            new_transitions.push(HostDfaTransition {
+                start,
+                end: (class_signatures.len() as u32).saturating_sub(1),
+                target: current_target,
+            });
+        }
+
+        state.transition_len =
+            (new_transitions.len() as u32).saturating_sub(state.first_transition);
+    }
+
+    dfa.transitions = new_transitions;
+    dfa.classes = classes;
+    dfa.class_count = class_signatures.len() as u16;
+}
+
+fn find_segment_index(segments: &[Segment], value: u32) -> usize {
+    let mut lo = 0usize;
+    let mut hi = segments.len();
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        let segment = &segments[mid];
+        if value < segment.start {
+            hi = mid;
+        } else if value > segment.end {
+            lo = mid + 1;
+        } else {
+            return mid;
+        }
+    }
+    segments.len().saturating_sub(1)
 }
 
 fn populate_dense_tables(dfa: &mut HostCompiledDfa) {
@@ -256,29 +460,32 @@ fn populate_dense_tables(dfa: &mut HostCompiledDfa) {
         let mut min = u32::MAX;
         let mut max = 0u32;
         let mut coverage: u64 = 0;
-        let mut valid = true;
+        let mut coverage_classes: u32 = 0;
 
         for tr in transitions {
             min = cmp::min(min, tr.start);
             max = cmp::max(max, tr.end);
-            if tr.end == u32::MAX {
-                valid = false;
-                break;
+            if tr.end < tr.start {
+                continue;
             }
             let span = tr.end.saturating_sub(tr.start).saturating_add(1);
             coverage = coverage.saturating_add(span as u64);
+            coverage_classes = coverage_classes.saturating_add(span);
         }
 
-        if !valid || min == u32::MAX || max < min {
+        if min == u32::MAX || max < min {
             continue;
         }
 
         let span = max - min + 1;
-        if span > DENSE_SPAN_LIMIT {
-            continue;
-        }
+        let total_classes = cmp::max(dfa.class_count as u32, 1);
+        let fanout = transitions.len() as u32;
+        let dense_candidate = span <= DENSE_SPAN_LIMIT
+            || (coverage_classes >= DENSE_MIN_COVERAGE
+                && coverage_classes * DENSE_RATIO_DENOMINATOR >= span * DENSE_RATIO_NUMERATOR)
+            || (fanout > 8 && coverage_classes * 3 >= total_classes);
 
-        if coverage * 2 < span as u64 {
+        if !dense_candidate {
             continue;
         }
 

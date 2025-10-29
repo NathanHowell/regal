@@ -264,7 +264,8 @@ fn emit_codegen(
     let token_count = specs.len();
     let states_len = dfa.states.len();
     let transitions_len = dfa.transitions.len();
-    let dense_slots = 0usize;
+    let dense_slots = dfa.dense.len();
+    let class_slots = dfa.classes.len();
 
     let enum_path = specs
         .iter()
@@ -299,6 +300,9 @@ fn emit_codegen(
             let value = *b;
             quote! { #value }
         });
+        let dense_offset = state.dense_offset;
+        let dense_len = state.dense_len;
+        let dense_start = state.dense_start;
         quote! {
             regal::DfaState {
                 first_transition: #first,
@@ -306,9 +310,9 @@ fn emit_codegen(
                 accept_token: #accept,
                 priority: #priority,
                 possible: regal::Bitset::from_array([#(#bit_array),*]),
-                dense_offset: 0,
-                dense_len: 0,
-                dense_start: 0,
+                dense_offset: #dense_offset,
+                dense_len: #dense_len,
+                dense_start: #dense_start,
             }
         }
     });
@@ -326,7 +330,23 @@ fn emit_codegen(
         }
     });
 
-    let dense_entries: Vec<proc_macro2::TokenStream> = Vec::new();
+    let dense_entries = dfa.dense.iter().map(|entry| {
+        let value = *entry;
+        quote! { #value }
+    });
+
+    let class_entries = dfa.classes.iter().map(|entry| {
+        let start = entry.start;
+        let end = entry.end;
+        let class = entry.class;
+        quote! {
+            regal::ByteClass {
+                start: #start,
+                end: #end,
+                class: #class,
+            }
+        }
+    });
 
     let lexer_ident = format_ident!("__REGAL_LEXER");
     let start_state = dfa.start;
@@ -337,7 +357,8 @@ fn emit_codegen(
             #token_count,
             #states_len,
             #transitions_len,
-            #dense_slots
+            #dense_slots,
+            #class_slots
         > = regal::CompiledLexer::from_parts(
             regal::PackedDfa::from_parts(
                 #start_state,
@@ -347,6 +368,8 @@ fn emit_codegen(
                 #transitions_len,
                 [#(#dense_entries),*],
                 #dense_slots,
+                [#(#class_entries),*],
+                #class_slots,
             ),
             [#(#token_info),*]
         );
@@ -357,7 +380,8 @@ fn emit_codegen(
                 #token_count,
                 #states_len,
                 #transitions_len,
-                #dense_slots
+                #dense_slots,
+                #class_slots
             > {
                 &#lexer_ident
             }
