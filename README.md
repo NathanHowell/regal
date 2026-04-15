@@ -55,7 +55,7 @@ fn main() {
 
     // Tokens are deterministic and trivia can be skipped via the flag above.
     for record in cache.tokens().iter().filter(|t| !t.skipped) {
-        println!("{:?} => {:?}", record.token, record.span(compiled));
+        println!("{:?} => {:?}", record.token, record.start..record.end);
     }
 
     // Incrementally update after an edit.
@@ -88,13 +88,13 @@ Variant-level `#[skip]` and `#[priority = …]` attributes act as defaults if yo
 The core crate exposes incremental utilities that keep a token cache synced with text edits. When an edit arrives, Regal identifies the smallest affected span, replays from a saved DFA checkpoint, and produces either a completed token stream or a partial token (for cursor completions).
 
 ```rust
-let (checkpoint, partial) = cache.rebuild(compiled, source)?;
+let partial = cache.rebuild(compiled, source)?;
 if let Some(token) = partial {
     // Handle in-progress token for completion.
 }
 
 let partial = cache.apply_edit(compiled, new_source, TextEdit { range, replacement_len })?;
-let cursor_view = cache.cursor_view(cursor_position)?;
+let cursor_view = cache.cursor(cursor_position);
 ```
 
 The incremental layer is stack-allocated and uses `heapless::Vec` so that it works in `no_std` contexts.
