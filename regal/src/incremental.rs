@@ -199,7 +199,7 @@ pub struct CursorView<'cache, T> {
 fn find_restart_index<T>(tokens: &[TokenRecord<T>], offset: usize) -> usize {
     let mut idx = 0;
     while idx < tokens.len() {
-        if tokens[idx].end > offset {
+        if tokens[idx].end >= offset {
             break;
         }
         idx += 1;
