@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 #![doc = "Regal: a no_std, incremental, compile-time DFA lexer library."]
 
+extern crate self as regal;
+
 mod bitset;
 mod compile;
 mod dfa;

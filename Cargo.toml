@@ -13,6 +13,9 @@ license = "MIT"
 rust-version = "1.85"
 
 [workspace.dependencies]
+ariadne = { version = "0.4.1", features = ["auto-color"] }
+chumsky = "0.10.0"
+cursive = { version = "0.21.0", default-features = false, features = ["crossterm-backend"] }
 heapless = { version = "0.9.1", default-features = false }
 proc-macro2 = "1.0.103"
 quote = "1.0.41"

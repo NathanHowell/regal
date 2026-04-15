@@ -14,4 +14,7 @@ default = []
 alloc = ["dep:regal-compiler"]
 
 [dev-dependencies]
+ariadne.workspace = true
+chumsky.workspace = true
+cursive.workspace = true
 regal-macros = { path = "../regal-macros" }
