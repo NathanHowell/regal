@@ -45,7 +45,7 @@ enum TokenKind {
     #[regex(r"-?[0-9]+[eE][+-]?[0-9]+")]
     #[regex(r"-?[0-9]+\.[0-9]+[eE][+-]?[0-9]+")]
     Number,
-    #[regex(r#""[^"\\]*""#)]
+    #[regex(r#""(?:[^"\\]|\\.)*""#)]
     String,
 }
 
@@ -179,7 +179,7 @@ fn lex<'src>(source: &'src str) -> Result<'src, Vec<SpannedToken<'src>>> {
                         })?;
                         Token::Number(value)
                     }
-                    TokenKind::String => Token::String(slice),
+                    TokenKind::String => Token::String(&slice[1..slice.len() - 1]),
                     TokenKind::Trivia => continue,
                 };
                 output.push(SpannedToken { token, span });
