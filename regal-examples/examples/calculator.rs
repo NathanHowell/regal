@@ -7,6 +7,7 @@ use chumsky::prelude::*;
 use regal::{IncrementalError, TokenCache};
 use regal_macros::RegalLexer;
 use std::env;
+use std::fmt;
 
 const MAX_TOKENS: usize = 2048;
 
@@ -47,6 +48,16 @@ enum LexError {
     TokenOverflow,
     UnexpectedEnd,
     InvalidInteger(String),
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LexError::TokenOverflow => f.write_str("token cache overflow"),
+            LexError::UnexpectedEnd => f.write_str("unexpected end of input"),
+            LexError::InvalidInteger(msg) => write!(f, "invalid integer: {}", msg),
+        }
+    }
 }
 
 fn lex(input: &str) -> Result<Vec<Token>, LexError> {
@@ -156,7 +167,7 @@ fn main() {
     let tokens = match lex(&input) {
         Ok(tokens) => tokens,
         Err(err) => {
-            eprintln!("lex error: {err:?}");
+            eprintln!("lex error: {err}");
             std::process::exit(1);
         }
     };

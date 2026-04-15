@@ -8,6 +8,7 @@ use regal::{IncrementalError, TokenCache};
 use regal_macros::RegalLexer;
 use std::collections::HashMap;
 use std::env;
+use std::fmt;
 use std::fs;
 use std::ops::Range;
 
@@ -70,6 +71,37 @@ enum Value {
     String(String),
     Array(Vec<Value>),
     Object(HashMap<String, Value>),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Null => f.write_str("null"),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::String(s) => write!(f, "\"{}\"", s),
+            Value::Array(items) => {
+                f.write_str("[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                f.write_str("]")
+            }
+            Value::Object(map) => {
+                f.write_str("{")?;
+                for (i, (k, v)) in map.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "\"{}\": {}", k, v)?;
+                }
+                f.write_str("}")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -286,7 +318,7 @@ fn main() {
                 );
                 std::process::exit(1);
             } else {
-                println!("{:#?}", value);
+                println!("{}", value);
             }
         }
         Err((msg, span)) => {
