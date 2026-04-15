@@ -168,6 +168,10 @@ impl<
         self.states_len
     }
 
+    pub(crate) fn transitions_len(&self) -> usize {
+        self.transitions_len
+    }
+
     pub const fn from_parts(
         start: u16,
         states: [DfaState<MAX_TOKENS>; MAX_STATES],

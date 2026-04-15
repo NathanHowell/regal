@@ -19,6 +19,38 @@ pub enum CompileError {
     Dfa(DfaError),
 }
 
+/// Size metrics for a compiled lexer.
+///
+/// Returned by [`CompiledLexer::stats`]. Useful for capacity planning
+/// — the const-generic table sizes on [`CompiledLexer`] must be chosen
+/// upfront, and these counts tell you how much of each budget the
+/// grammar actually uses — and for CI regression checks that guard
+/// against unintended grammar blowup.
+///
+/// The struct is `#[non_exhaustive]`; additional metrics may be added
+/// in future versions.
+#[non_exhaustive]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct LexerStats {
+    /// Number of token definitions (always equal to the `TOKENS`
+    /// const-generic parameter).
+    pub tokens: usize,
+    /// Number of DFA states in use. Compare against the `STATES`
+    /// const-generic parameter for headroom.
+    pub states: usize,
+    /// Number of sparse transition entries in use across all states.
+    /// Compare against the `TRANSITIONS` const-generic parameter.
+    pub transitions: usize,
+    /// Number of DFA states augmented with a dense-lookup row for
+    /// faster transition dispatch. A state may have a dense row, a
+    /// sparse row, or both; this count reflects only those with a
+    /// non-empty dense row.
+    pub dense_rows: usize,
+    /// Number of byte classes after alphabet compaction. Compare
+    /// against the `CLASSES` const-generic parameter.
+    pub byte_classes: usize,
+}
+
 pub struct CompiledLexer<
     T,
     const TOKENS: usize,
@@ -65,6 +97,30 @@ where
             dfa,
             token_info,
             _marker: PhantomData,
+        }
+    }
+
+    /// Returns size metrics for this compiled lexer.
+    ///
+    /// See [`LexerStats`] for the meaning of each field. Useful for
+    /// choosing tighter const-generic bounds and for regression tests
+    /// that guard against grammar changes ballooning the tables.
+    pub fn stats(&self) -> LexerStats {
+        let states = self.dfa.states_len();
+        let mut dense_rows = 0usize;
+        for idx in 0..states {
+            if let Some(state) = self.dfa.state(idx as u16) {
+                if state.dense_len > 0 {
+                    dense_rows += 1;
+                }
+            }
+        }
+        LexerStats {
+            tokens: self.token_info.len(),
+            states,
+            transitions: self.dfa.transitions_len(),
+            dense_rows,
+            byte_classes: self.dfa.class_count(),
         }
     }
 }

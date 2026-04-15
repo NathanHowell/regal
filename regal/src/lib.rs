@@ -15,7 +15,7 @@ mod pattern;
 pub use bitset::Bitset;
 #[cfg(feature = "alloc")]
 pub use compile::compile;
-pub use compile::{CompileError, CompiledLexer, TokenSpec};
+pub use compile::{CompileError, CompiledLexer, LexerStats, TokenSpec};
 pub use dfa::{ByteClass, DfaError, DfaState, DfaTransition, PackedDfa};
 pub use incremental::{
     CursorView, IncrementalError, PartialCandidate, PartialToken, TextEdit, TokenCache, TokenRecord,
@@ -28,7 +28,7 @@ pub mod prelude {
     pub use crate::bitset::Bitset;
     #[cfg(feature = "alloc")]
     pub use crate::compile::compile;
-    pub use crate::compile::{CompiledLexer, TokenSpec};
+    pub use crate::compile::{CompiledLexer, LexerStats, TokenSpec};
     pub use crate::dfa::{ByteClass, DfaError, DfaState, DfaTransition, PackedDfa};
     pub use crate::incremental::{
         CursorView, IncrementalError, PartialCandidate, PartialToken, TextEdit, TokenCache,
