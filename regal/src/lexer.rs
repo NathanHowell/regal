@@ -79,6 +79,25 @@ pub(crate) struct Accept {
     length: usize,
 }
 
+/// A snapshot of the lexer's state at a safe resume point.
+///
+/// Bundles the current DFA state id, how many bytes have been consumed
+/// into the in-progress match, and the most recent accept state (used to
+/// backtrack on rejection). Captured with [`Lexer::checkpoint`] and
+/// restored with [`Lexer::restore`].
+///
+/// In the incremental API, each
+/// [`TokenRecord`](crate::incremental::TokenRecord)'s
+/// [`entry`](crate::incremental::TokenRecord::entry) field holds the
+/// checkpoint from just before its token began being scanned; this is
+/// what [`TokenCache::apply_edit`](crate::incremental::TokenCache::apply_edit)
+/// replays from when an edit invalidates cached tokens.
+///
+/// A checkpoint is only meaningful when restored into a lexer produced by
+/// the same [`CompiledLexer`] that captured it. Restoring a checkpoint
+/// taken from a different compiled lexer is safe in memory terms but
+/// yields meaningless output — the contained state id may refer to a
+/// different DFA state.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Checkpoint {
     pub(crate) state: u16,
@@ -87,6 +106,8 @@ pub struct Checkpoint {
 }
 
 impl Checkpoint {
+    /// Returns a fresh checkpoint positioned at `state` with no
+    /// in-progress match.
     pub const fn start(state: u16) -> Self {
         Self {
             state,
@@ -107,6 +128,7 @@ impl Checkpoint {
         }
     }
 
+    /// Returns the DFA state id embedded in this checkpoint.
     pub const fn state(&self) -> u16 {
         self.state
     }
