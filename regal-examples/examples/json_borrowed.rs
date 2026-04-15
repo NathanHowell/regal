@@ -1,7 +1,7 @@
 //! Borrowing variant of the JSON parser example.
 //!
-//! Usage:
-//!     cargo run --example json-borrowed -- examples/example.json
+//! Usage (from workspace root):
+//!     cargo run -p regal-examples --example json_borrowed -- regal-examples/examples/example.json
 
 use ariadne::{ColorGenerator, Label, Report, ReportKind, Source};
 use regal::{IncrementalError, TokenCache};

@@ -1,17 +1,17 @@
 [package]
-name = "regal"
+name = "regal-examples"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+publish = false
 
-[dependencies]
-heapless.workspace = true
-regal-compiler = { path = "../regal-compiler", optional = true }
-
-[features]
-default = []
-alloc = ["dep:regal-compiler"]
+[lib]
+path = "src/lib.rs"
 
 [dev-dependencies]
+regal = { path = "../regal" }
 regal-macros = { path = "../regal-macros" }
+ariadne.workspace = true
+chumsky.workspace = true
+cursive.workspace = true

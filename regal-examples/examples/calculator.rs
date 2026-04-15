@@ -1,7 +1,7 @@
 //! Expression calculator using Regal for lexing and Chumsky for parsing.
 //!
-//! Usage:
-//!     cargo run --example calculator -- "1 + 7 * (3 - 4) / 2"
+//! Usage (from workspace root):
+//!     cargo run -p regal-examples --example calculator -- "1 + 7 * (3 - 4) / 2"
 
 use chumsky::prelude::*;
 use regal::{IncrementalError, TokenCache};

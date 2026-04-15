@@ -1,7 +1,7 @@
 //! JSON parser example built on Regal tokens.
 //!
-//! Usage:
-//!     cargo run --example json -- examples/example.json
+//! Usage (from workspace root):
+//!     cargo run -p regal-examples --example json -- regal-examples/examples/example.json
 
 use ariadne::{ColorGenerator, Label, Report, ReportKind, Source};
 use regal::{IncrementalError, TokenCache};

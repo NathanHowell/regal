@@ -3,6 +3,12 @@ members = [
     "regal",
     "regal-macros",
     "regal-compiler",
+    "regal-examples",
+]
+default-members = [
+    "regal",
+    "regal-macros",
+    "regal-compiler",
 ]
 resolver = "2"
 

@@ -667,9 +667,6 @@ dependencies = [
 name = "regal"
 version = "0.1.0"
 dependencies = [
- "ariadne",
- "chumsky",
- "cursive",
  "heapless",
  "regal-compiler",
  "regal-macros",
@@ -678,6 +675,17 @@ dependencies = [
 [[package]]
 name = "regal-compiler"
 version = "0.1.0"
+
+[[package]]
+name = "regal-examples"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "chumsky",
+ "cursive",
+ "regal",
+ "regal-macros",
+]
 
 [[package]]
 name = "regal-macros"
