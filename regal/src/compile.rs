@@ -417,3 +417,129 @@ mod host {
         ))
     }
 }
+
+#[cfg(all(test, feature = "alloc"))]
+mod tests {
+    use super::*;
+    use crate::pattern::{CharCategory, ClassAtom, Pattern, PatternNode};
+
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+    enum Tok {
+        #[default]
+        Alpha,
+        Number,
+        Mixed,
+    }
+
+    const TOKENS: usize = 4;
+    const NFA_STATES: usize = 64;
+    const NFA_TRANSITIONS: usize = 128;
+    const NFA_EPSILONS: usize = 128;
+    const DFA_STATES: usize = 64;
+    const DFA_TRANSITIONS: usize = 128;
+    const MAX_BOUNDARIES: usize = 256;
+    const MAX_DENSE: usize = 256;
+    const MAX_CLASSES: usize = 256;
+
+    const ALPHA_CLASS: [ClassAtom; 1] = [ClassAtom::Category(CharCategory::Alphabetic)];
+    const ALPHA_NODE: PatternNode<'static> = PatternNode::Class(&ALPHA_CLASS);
+    const ALPHA_REPEAT_NODE: PatternNode<'static> = PatternNode::Repeat {
+        inner: Pattern::new(&ALPHA_NODE),
+        min: 1,
+        max: None,
+    };
+    const ALPHA_PATTERN: Pattern<'static> = Pattern::new(&ALPHA_REPEAT_NODE);
+
+    const DIGIT_CLASS: [ClassAtom; 1] = [ClassAtom::Category(CharCategory::Numeric)];
+    const DIGIT_NODE: PatternNode<'static> = PatternNode::Class(&DIGIT_CLASS);
+    const DIGIT_REPEAT_NODE: PatternNode<'static> = PatternNode::Repeat {
+        inner: Pattern::new(&DIGIT_NODE),
+        min: 1,
+        max: None,
+    };
+    const DIGIT_PATTERN: Pattern<'static> = Pattern::new(&DIGIT_REPEAT_NODE);
+
+    const MIX_SEQ: [Pattern<'static>; 2] = [ALPHA_PATTERN, DIGIT_PATTERN];
+    const MIX_NODE: PatternNode<'static> = PatternNode::Sequence(&MIX_SEQ);
+    const MIX_PATTERN: Pattern<'static> = Pattern::new(&MIX_NODE);
+
+    fn compile_test_lexer()
+    -> CompiledLexer<Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE, MAX_CLASSES> {
+        let specs = [
+            TokenSpec {
+                pattern: ALPHA_PATTERN,
+                token: Tok::Alpha,
+                priority: 0,
+                skip: false,
+            },
+            TokenSpec {
+                pattern: DIGIT_PATTERN,
+                token: Tok::Number,
+                priority: 0,
+                skip: false,
+            },
+            TokenSpec {
+                pattern: MIX_PATTERN,
+                token: Tok::Mixed,
+                priority: 5,
+                skip: false,
+            },
+        ];
+
+        compile::<
+            Tok,
+            TOKENS,
+            NFA_STATES,
+            NFA_TRANSITIONS,
+            NFA_EPSILONS,
+            DFA_STATES,
+            DFA_TRANSITIONS,
+            MAX_BOUNDARIES,
+            MAX_DENSE,
+            MAX_CLASSES,
+        >(&specs)
+        .expect("test lexer should compile")
+    }
+
+    #[test]
+    fn byte_classes_compact_alphabet() {
+        let compiled = compile_test_lexer();
+        let class_count = compiled.dfa.class_count();
+        assert!(
+            class_count <= 32,
+            "expected byte classes to compact alphabet, got {}",
+            class_count
+        );
+
+        let classes = compiled.dfa.classes();
+        let class_for = |ch: char| -> u16 {
+            let code = ch as u32;
+            classes
+                .iter()
+                .find(|entry| entry.start <= code && code <= entry.end)
+                .map(|entry| entry.class)
+                .expect("class entry for character")
+        };
+
+        assert_eq!(class_for('a'), class_for('b'));
+        assert_eq!(class_for('0'), class_for('9'));
+        assert_ne!(class_for('a'), class_for('0'));
+    }
+
+    #[test]
+    fn dense_rows_populate_for_dense_states() {
+        let compiled = compile_test_lexer();
+        let mut dense_states = 0usize;
+        for state_idx in 0..compiled.dfa.states_len() {
+            if let Some(state) = compiled.dfa.state(state_idx as u16) {
+                if state.dense_len > 0 {
+                    dense_states += 1;
+                }
+            }
+        }
+        assert!(
+            dense_states > 0,
+            "expected at least one state with dense transition table"
+        );
+    }
+}
