@@ -471,7 +471,8 @@ fn emit_codegen(
                 [#(#class_entries),*],
                 #class_slots,
             ),
-            [#(#token_info),*]
+            [#(#token_info),*],
+            #token_count,
         );
 
         impl #enum_ident {

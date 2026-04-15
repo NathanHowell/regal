@@ -90,6 +90,16 @@ fn compile_builds_expected_tokens() {
     assert_match(&mut lexer, "foo123", Tok::Mixed, 6);
 }
 
+#[test]
+fn stats_tokens_reflects_spec_count_not_capacity() {
+    // The test lexer is compiled with 3 specs into a TOKENS=4 capacity;
+    // stats.tokens must report 3 (actual definitions), not 4 (capacity).
+    let compiled = compile_test_lexer();
+    let stats = compiled.stats();
+    assert_eq!(stats.tokens, 3);
+    assert_eq!(TOKENS, 4);
+}
+
 fn assert_match(
     lexer: &mut regal::Lexer<'_, Tok, TOKENS, DFA_STATES, DFA_TRANSITIONS, MAX_DENSE, MAX_CLASSES>,
     input: &str,

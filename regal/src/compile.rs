@@ -32,8 +32,9 @@ pub enum CompileError {
 #[non_exhaustive]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LexerStats {
-    /// Number of token definitions (always equal to the `TOKENS`
-    /// const-generic parameter).
+    /// Number of token definitions actually compiled. May be less than
+    /// the `TOKENS` const-generic parameter when the runtime [`compile`]
+    /// path is called with fewer specs than the capacity allows.
     pub tokens: usize,
     /// Number of DFA states in use. Compare against the `STATES`
     /// const-generic parameter for headroom.
@@ -61,6 +62,7 @@ pub struct CompiledLexer<
 > {
     pub(crate) dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE, CLASSES>,
     pub(crate) token_info: [TokenInfo<T>; TOKENS],
+    pub(crate) tokens_len: usize,
     _marker: PhantomData<T>,
 }
 
@@ -92,10 +94,12 @@ where
     pub const fn from_parts(
         dfa: PackedDfa<STATES, TRANSITIONS, TOKENS, DENSE, CLASSES>,
         token_info: [TokenInfo<T>; TOKENS],
+        tokens_len: usize,
     ) -> Self {
         Self {
             dfa,
             token_info,
+            tokens_len,
             _marker: PhantomData,
         }
     }
@@ -116,7 +120,7 @@ where
             }
         }
         LexerStats {
-            tokens: self.token_info.len(),
+            tokens: self.tokens_len,
             states,
             transitions: self.dfa.transitions_len(),
             dense_rows,
@@ -257,6 +261,7 @@ mod host {
         Ok(CompiledLexer {
             dfa: packed,
             token_info: tokens,
+            tokens_len: specs.len(),
             _marker: PhantomData,
         })
     }
